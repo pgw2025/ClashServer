@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+
+# IDE
+.vscode/
+.vs/
+*.user
+*.suo
+
+# Runtime data (user-specific config & rules)
+Data/rules.json
+Data/settings.json
+
+# Logs
+*.log
+logs/
+
+# OS files
+Thumbs.db
+.DS_Store

@@ -1,0 +1,181 @@
+@page
+@model SettingsModel
+@{
+    ViewData["Title"] = "设置";
+    var suggestedToken = TempData["SuggestedToken"] as string;
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0 fw-bold"><i class="bi bi-gear text-primary me-2"></i>系统设置</h1>
+        <p class="text-muted small mt-1 mb-0">配置上游订阅链接、访问凭证和缓存策略</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @Html.Raw(Model.StatusMessage!)
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<form method="post" asp-page-handler="Save">
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-cloud-download-fill text-primary me-2"></i>上游订阅配置</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label asp-for="Input.UpstreamUrl" class="form-label fw-semibold"></label>
+                        <input asp-for="Input.UpstreamUrl" type="url" class="form-control form-control-lg" placeholder="https://example.com/clash/subscription/xxxx">
+                        <span asp-validation-for="Input.UpstreamUrl" class="text-danger small d-block mt-1"></span>
+                        <div class="form-text">
+                            Clash 提供商下发的原始订阅 URL（必须是标准的 Clash YAML 格式，不是 Base64 的通用订阅）。
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.CacheMinutes" class="form-label fw-semibold"></label>
+                            <div class="input-group input-group-lg">
+                                <input asp-for="Input.CacheMinutes" type="number" min="1" max="1440" class="form-control form-control-lg">
+                                <span class="input-group-text">分钟</span>
+                            </div>
+                            <span asp-validation-for="Input.CacheMinutes" class="text-danger small d-block mt-1"></span>
+                            <div class="form-text">
+                                上游订阅内容缓存时长，避免频繁请求上游被封。建议 15 ~ 60 分钟。
+                            </div>
+                        </div>
+                        <div class="col-md-6 align-self-end">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" asp-for="Input.InsertRulesBefore" style="width:2.5rem;height:1.4rem;" id="insertBeforeSwitch">
+                                <label class="form-check-label fw-semibold ms-2" for="Input_InsertRulesBefore">将自定义规则插入到 rules 顶部</label>
+                            </div>
+                            <div class="form-text ms-3">
+                                开启后，自定义规则优先级高于上游自带规则；关闭则追加到末尾。
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 p-3 rounded border" style="background-color:#fff8e1;">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" asp-for="Input.ReplaceMode" style="width:2.5rem;height:1.4rem;" id="replaceModeSwitch">
+                            <label class="form-check-label fw-semibold ms-2" for="Input_ReplaceMode"><i class="bi bi-exclamation-triangle text-warning me-1"></i>完全替换上游规则（丢弃原有 rules）</label>
+                        </div>
+                        <div class="form-text ms-3">
+                            开启后，输出中的 <code>rules</code> 段将<b>仅包含</b>你自定义的规则，上游原有规则会被丢弃。<br>
+                            关闭时，自定义规则会按上方设置插入/追加到上游规则列表中。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-shield-lock text-warning me-2"></i>访问凭证</h5>
+                    <button type="submit" class="btn btn-sm btn-outline-warning" asp-page-handler="GenerateToken" formnovalidate>
+                        <i class="bi bi-key me-1"></i>随机生成
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label asp-for="Input.AccessToken" class="form-label fw-semibold"></label>
+                        <div class="input-group input-group-lg">
+                            <input asp-for="Input.AccessToken" type="text" id="tokenInput" class="form-control form-control-lg" placeholder="建议至少 8 位字母数字组合" value="@(suggestedToken ?? Model.Input.AccessToken)">
+                            <button type="button" class="btn btn-outline-secondary" onclick="copyToClipboard(document.getElementById('tokenInput').value)">
+                                <i class="bi bi-clipboard me-1"></i>复制
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="toggleTokenVisibility()">
+                                <i id="tokenEye" class="bi bi-eye me-1"></i><span id="tokenEyeLabel">显示</span>
+                            </button>
+                        </div>
+                        <span asp-validation-for="Input.AccessToken" class="text-danger small d-block mt-1"></span>
+                        <div class="form-text">
+                            客户端访问 <code>/sub?token=xxx</code> 时使用；留空则不校验（不推荐）。
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.Input.AccessToken))
+                    {
+                        <div class="alert alert-light border small mb-0">
+                            <div class="row g-2 align-items-center">
+                                <div class="col-md-8">
+                                    <div class="fw-semibold mb-1"><i class="bi bi-link-45deg me-1 text-primary"></i>最终订阅地址（含 Token）：</div>
+                                    <div class="font-monospace small text-break bg-white p-2 rounded border" id="fullSubUrl">计算中...</div>
+                                </div>
+                                <div class="col-md-4 text-md-end">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="copyToClipboard(document.getElementById('fullSubUrl').textContent)">
+                                        <i class="bi bi-clipboard me-1"></i>复制地址
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm sticky-top" style="top:80px;">
+                <div class="card-header bg-white border-bottom">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-sd-card text-success me-2"></i>存储说明</h5>
+                </div>
+                <div class="card-body small text-muted">
+                    <div class="mb-3">
+                        <div class="fw-semibold text-body mb-1"><i class="bi bi-file-earmark-richtext text-primary me-1"></i>Data/settings.json</div>
+                        保存上游 URL、访问 Token、缓存时长等配置。
+                    </div>
+                    <div class="mb-3">
+                        <div class="fw-semibold text-body mb-1"><i class="bi bi-file-earmark-spreadsheet text-primary me-1"></i>Data/rules.json</div>
+                        保存所有自定义规则，支持在「规则管理」页面在线增删改。
+                    </div>
+                    <div class="alert alert-warning small mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        本系统不使用任何数据库。请定期备份 <code>Data/</code> 目录下的 JSON 文件，避免意外丢失。
+                    </div>
+                </div>
+                <div class="card-footer bg-white border-top d-grid gap-2">
+                    <button type="submit" class="btn btn-primary btn-lg py-2 fw-semibold">
+                        <i class="bi bi-check2 me-1"></i>保存设置
+                    </button>
+                    <a class="btn btn-outline-secondary" asp-page="/Index">
+                        <i class="bi bi-arrow-left me-1"></i>返回仪表盘
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+<script>
+    function toggleTokenVisibility() {
+        var input = document.getElementById('tokenInput');
+        var icon = document.getElementById('tokenEye');
+        var label = document.getElementById('tokenEyeLabel');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'bi bi-eye-slash me-1';
+            label.textContent = '隐藏';
+        } else {
+            input.type = 'password';
+            icon.className = 'bi bi-eye me-1';
+            label.textContent = '显示';
+        }
+    }
+    (function(){
+        setTimeout(toggleTokenVisibility, 0);
+    })();
+
+    function buildSubUrl() {
+        var token = document.getElementById('tokenInput').value.trim();
+        var url = window.location.protocol + '//' + window.location.host + '/sub';
+        if (token) url += '?token=' + encodeURIComponent(token);
+        var el = document.getElementById('fullSubUrl');
+        if (el) el.textContent = url;
+    }
+    document.getElementById('tokenInput').addEventListener('input', buildSubUrl);
+    document.addEventListener('DOMContentLoaded', buildSubUrl);
+</script>
+}

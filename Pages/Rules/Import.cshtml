@@ -1,0 +1,152 @@
+@page
+@model ClashServer.Pages.Rules.ImportModel
+@{
+    ViewData["Title"] = "导入规则";
+}
+
+<div class="mb-4">
+    <h1 class="h3 mb-0 fw-bold"><i class="bi bi-upload text-success me-2"></i>批量导入规则</h1>
+    <p class="text-muted small mt-1 mb-0">支持粘贴 Clash YAML 格式的 rules 列表，或直接上传 .yaml / .yml 文件</p>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        @Model.StatusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <ul class="nav nav-tabs card-header-tabs mb-0 border-0" id="tabNav" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active fw-semibold" id="paste-tab" data-bs-toggle="tab" data-bs-target="#pastePane" type="button">
+                            <i class="bi bi-clipboard me-1"></i>粘贴文本
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-semibold" id="upload-tab" data-bs-toggle="tab" data-bs-target="#uploadPane" type="button">
+                            <i class="bi bi-file-earmark-arrow-up me-1"></i>上传文件
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body">
+                <div class="tab-content" id="tabContent">
+                    <div class="tab-pane fade show active" id="pastePane">
+                        <form method="post" asp-page-handler="Preview">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">粘贴 Clash rules:</label>
+                                <textarea asp-for="YamlText" class="form-control font-monospace small" rows="12"
+                                          placeholder="rules:&#10;  - DOMAIN-SUFFIX,google.com,PROXY&#10;  - GEOIP,CN,DIRECT&#10;  - DOMAIN,example.com,REJECT"></textarea>
+                                <div class="form-text">
+                                    可以粘贴 <code>rules:</code> 段（含缩进），也可以直接粘贴规则行，每行一条。
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-eye me-1"></i>预览解析结果
+                                </button>
+                                <button type="submit" class="btn btn-success" asp-page-handler="Import" onclick="return confirm('确认直接导入所有规则?')">
+                                    <i class="bi bi-check2-all me-1"></i>直接导入
+                                </button>
+                                <a class="btn btn-outline-secondary ms-auto" asp-page="/Rules/Index">
+                                    <i class="bi bi-arrow-left me-1"></i>返回列表
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="tab-pane fade" id="uploadPane">
+                        <form method="post" asp-page-handler="Upload" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">选择 YAML 文件：</label>
+                                <input type="file" name="yamlFile" class="form-control form-control-lg" accept=".yaml,.yml,.txt">
+                                <div class="form-text">
+                                    支持 <code>.yaml</code>, <code>.yml</code>, <code>.txt</code> 格式的 Clash 配置文件，系统会自动识别 rules 段导入。
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-upload me-1"></i>上传并预览
+                                </button>
+                                <a class="btn btn-outline-secondary ms-auto" asp-page="/Rules/Index">
+                                    <i class="bi bi-arrow-left me-1"></i>返回列表
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-header bg-white border-bottom">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-info-circle text-primary me-2"></i>规则格式说明</h5>
+            </div>
+            <div class="card-body small text-muted">
+                <p class="mb-2">Clash 规则标准格式：<code class="fw-semibold">规则类型,匹配内容,策略,# 备注</code></p>
+                <ul class="mb-0 ps-3">
+                    <li><strong>规则类型：</strong> DOMAIN / DOMAIN-SUFFIX / DOMAIN-KEYWORD / GEOIP / IP-CIDR / PROCESS-NAME / MATCH ...</li>
+                    <li><strong>策略：</strong> DIRECT / PROXY / REJECT / REJECT-DROP / 自定义策略组名</li>
+                    <li><strong>备注：</strong> 使用 <code>#</code> 开头，可选，仅用于方便管理。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm sticky-top" style="top:80px;">
+            <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-binoculars text-info me-2"></i>解析预览</h5>
+                @if (Model.ShowPreview && Model.PreviewRules?.Count > 0)
+                {
+                    <span class="badge text-bg-info">@Model.PreviewRules.Count 条</span>
+                }
+            </div>
+            <div class="card-body p-0">
+                @if (!Model.ShowPreview || Model.PreviewRules == null || Model.PreviewRules.Count == 0)
+                {
+                    <div class="p-5 text-center text-muted">
+                        <i class="bi bi-card-list fs-1 opacity-50 mb-2 d-block"></i>
+                        <p class="mb-0 small">在左侧粘贴 YAML 或上传文件后，解析结果会显示在这里</p>
+                    </div>
+                }
+                else
+                {
+                    <form method="post" asp-page-handler="Import">
+                        <input type="hidden" asp-for="YamlText" />
+                        <div class="alert alert-light m-3 mb-2 small">
+                            <i class="bi bi-info-circle text-info me-1"></i>
+                            已识别 <strong>@Model.PreviewRules.Count</strong> 条规则，全部将以<b>启用</b>状态导入。
+                        </div>
+                        <div class="px-3 pb-2">
+                            <button type="submit" class="btn btn-success w-100 py-2 fw-semibold">
+                                <i class="bi bi-check2-all me-1"></i>确认导入 @Model.PreviewRules.Count 条规则
+                            </button>
+                        </div>
+                        <div class="list-group list-group-flush" style="max-height:60vh;overflow-y:auto;">
+                            @foreach (var (r, idx) in Model.PreviewRules.Select((x, i) => (x, i)))
+                            {
+                                <div class="list-group-item border-0 border-bottom py-2">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <small class="text-muted fw-semibold" style="min-width:28px;">#@(idx + 1)</small>
+                                        <span class="badge bg-primary">@r.RuleType</span>
+                                        <span class="badge @(r.Policy == "REJECT" ? "bg-danger" : r.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">@r.Policy</span>
+                                    </div>
+                                    <div class="font-monospace small ms-4 mb-1">@r.Target</div>
+                                    @if (!string.IsNullOrWhiteSpace(r.Remark))
+                                    {
+                                        <div class="small text-muted ms-4"><i class="bi bi-chat-left-text me-1"></i>@r.Remark</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </form>
+                }
+            </div>
+        </div>
+    </div>
+</div>

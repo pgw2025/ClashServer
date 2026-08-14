@@ -1,0 +1,274 @@
+@page
+@using ClashServer.Models
+@model ClashServer.Pages.Rules.IndexModel
+@{
+    ViewData["Title"] = "规则管理";
+    var ruleTypes = CustomRule.AvailableRuleTypes;
+    var policies = CustomRule.AvailablePolicies;
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
+    <div>
+        <h1 class="h3 mb-0 fw-bold"><i class="bi bi-list-check text-primary me-2"></i>自定义规则</h1>
+        <p class="text-muted small mt-1 mb-0">共 @Model.Rules.Count 条规则，启用 @Model.Rules.Count(r => r.Enabled) 条</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ruleModal" onclick="openCreateModal()">
+            <i class="bi bi-plus-lg me-1"></i><span class="mobile-only">新增</span><span class="desktop-only">新增规则</span>
+        </button>
+        <a class="btn btn-outline-success" asp-page="/Rules/Import">
+            <i class="bi bi-upload me-1"></i><span class="desktop-only">批量</span>导入
+        </a>
+        @if (Model.Rules.Count > 0)
+        {
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearAllModal">
+                <i class="bi bi-trash me-1"></i><span class="desktop-only">清空</span>
+            </button>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        @Model.StatusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (Model.Rules.Count == 0)
+{
+    <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-5">
+            <div class="mb-3 text-primary opacity-50"><i class="bi bi-inbox fs-1"></i></div>
+            <h5 class="text-muted">还没有任何自定义规则</h5>
+            <p class="text-muted small">点击右上角「新增规则」开始添加，或前往「导入」页面批量粘贴 YAML。</p>
+            <div class="mt-3">
+                <button type="button" class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#ruleModal" onclick="openCreateModal()">
+                    <i class="bi bi-plus-lg me-1"></i>新增第一条规则
+                </button>
+                <a class="btn btn-outline-success" asp-page="/Rules/Import"><i class="bi bi-upload me-1"></i>批量导入</a>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="d-none d-md-block">
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 90px;">状态</th>
+                            <th>类型</th>
+                            <th>匹配内容</th>
+                            <th style="width: 120px;">策略</th>
+                            <th>备注</th>
+                            <th style="width: 170px;">更新时间</th>
+                            <th style="width: 120px;" class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in Model.Rules)
+                        {
+                            <tr class="@(r.Enabled ? "" : "table-secondary opacity-75")">
+                                <td>
+                                    <form method="post" asp-page-handler="Toggle" class="d-inline" onsubmit="return confirmToggle(this)">
+                                        <input type="hidden" name="id" value="@r.Id">
+                                        <div class="form-check form-switch m-0 p-0">
+                                            <input class="form-check-input ms-0" type="checkbox" role="switch"
+                                                   @(r.Enabled ? "checked" : "") style="width:2.2rem;height:1.2rem;"
+                                                   onchange="this.form.submit()">
+                                        </div>
+                                    </form>
+                                </td>
+                                <td><span class="badge @(r.Enabled ? "bg-primary" : "bg-secondary")">@r.RuleType</span></td>
+                                <td class="font-monospace small">@r.Target</td>
+                                <td>
+                                    <span class="badge @(r.Policy == "REJECT" ? "bg-danger" : r.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">
+                                        @r.Policy
+                                    </span>
+                                </td>
+                                <td class="text-muted small">@(string.IsNullOrWhiteSpace(r.Remark) ? "—" : r.Remark)</td>
+                                <td class="text-muted small">@r.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-primary btn-action" title="编辑"
+                                            onclick='openEditModal("@r.Id")'>
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="post" asp-page-handler="Delete" class="d-inline" onsubmit="return confirm('确认删除该规则?')">
+                                        <input type="hidden" name="id" value="@r.Id">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger btn-action" title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-md-none">
+        @foreach (var r in Model.Rules)
+        {
+            <div class="card rule-card border-0 shadow-sm">
+                <div class="card-body p-3 @(r.Enabled ? "" : "opacity-75 bg-light")">
+                    <div class="d-flex align-items-start justify-content-between mb-2">
+                        <div>
+                            <span class="badge @(r.Enabled ? "bg-primary" : "bg-secondary") me-1">@r.RuleType</span>
+                            <span class="badge @(r.Policy == "REJECT" ? "bg-danger" : r.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">@r.Policy</span>
+                        </div>
+                        <form method="post" asp-page-handler="Toggle" onsubmit="return confirmToggle(this)">
+                            <input type="hidden" name="id" value="@r.Id">
+                            <div class="form-check form-switch m-0 p-0">
+                                <input class="form-check-input ms-0" type="checkbox" role="switch"
+                                       @(r.Enabled ? "checked" : "") style="width:2.5rem;height:1.4rem;"
+                                       onchange="this.form.submit()">
+                            </div>
+                        </form>
+                    </div>
+                    <div class="font-monospace small mb-2 text-break">@r.Target</div>
+                    @if (!string.IsNullOrWhiteSpace(r.Remark))
+                    {
+                        <div class="text-muted small mb-2"><i class="bi bi-chat-left-text me-1"></i>@r.Remark</div>
+                    }
+                    <div class="d-flex align-items-center justify-content-between mt-2 pt-2 border-top">
+                        <small class="text-muted"><i class="bi bi-clock me-1"></i>@r.UpdatedAt.ToString("MM-dd HH:mm")</small>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick='openEditModal("@r.Id")'>
+                                <i class="bi bi-pencil me-1"></i>编辑
+                            </button>
+                            <form method="post" asp-page-handler="Delete" class="d-inline" onsubmit="return confirm('确认删除该规则?')">
+                                <input type="hidden" name="id" value="@r.Id">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash me-1"></i>删除
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<div class="modal fade" id="ruleModal" tabindex="-1" aria-labelledby="ruleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="Upsert">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="ruleModalLabel"><i class="bi bi-pencil-square text-primary me-2"></i><span id="modalTitle">新增规则</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" asp-for="InputRule.Id" id="ruleId">
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">规则类型 <span class="text-danger">*</span></label>
+                            <select class="form-select" asp-for="InputRule.RuleType" id="ruleType" required>
+                                <option value="">-- 请选择 --</option>
+                                @foreach (var t in ruleTypes)
+                                {
+                                    <option value="@t">@t</option>
+                                }
+                            </select>
+                            <span asp-validation-for="InputRule.RuleType" class="text-danger small"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">策略 <span class="text-danger">*</span></label>
+                            <select class="form-select" asp-for="InputRule.Policy" id="rulePolicy" required>
+                                <option value="">-- 请选择 --</option>
+                                @foreach (var p in policies)
+                                {
+                                    <option value="@p">@p</option>
+                                }
+                            </select>
+                            <span asp-validation-for="InputRule.Policy" class="text-danger small"></span>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">匹配内容 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" asp-for="InputRule.Target" id="ruleTarget" placeholder="例如: google.com / 192.168.1.0/24 / CN" required>
+                            <div class="form-text">根据规则类型填写域名、IP段、国家代码等</div>
+                            <span asp-validation-for="InputRule.Target" class="text-danger small"></span>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">备注</label>
+                            <input type="text" class="form-control" asp-for="InputRule.Remark" id="ruleRemark" placeholder="可选，仅用于管理">
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check pt-2">
+                                <input class="form-check-input" type="checkbox" asp-for="InputRule.Enabled" id="ruleEnabled">
+                                <label class="form-check-label" for="ruleEnabled">立即启用该规则</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-1"></i>保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="clearAllModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle text-warning me-2"></i>确认清空?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">该操作将<strong class="text-danger">永久删除全部 @Model.Rules.Count 条规则</strong>，且无法恢复。确认继续？</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form method="post" asp-page-handler="ClearAll" class="d-inline">
+                    <button type="submit" class="btn btn-danger"><i class="bi bi-trash me-1"></i>确认清空全部</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function confirmToggle(form) {
+        return true;
+    }
+
+    function openCreateModal() {
+        document.getElementById('modalTitle').textContent = '新增规则';
+        document.getElementById('ruleId').value = '00000000-0000-0000-0000-000000000000';
+        document.getElementById('ruleType').value = '';
+        document.getElementById('rulePolicy').value = '';
+        document.getElementById('ruleTarget').value = '';
+        document.getElementById('ruleRemark').value = '';
+        document.getElementById('ruleEnabled').checked = true;
+    }
+
+    async function openEditModal(id) {
+        try {
+            var resp = await fetch('?handler=Json&id=' + id);
+            if (!resp.ok) throw new Error('加载失败');
+            var r = await resp.json();
+            document.getElementById('modalTitle').textContent = '编辑规则';
+            document.getElementById('ruleId').value = r.id;
+            document.getElementById('ruleType').value = r.ruleType || '';
+            document.getElementById('rulePolicy').value = r.policy || '';
+            document.getElementById('ruleTarget').value = r.target || '';
+            document.getElementById('ruleRemark').value = r.remark || '';
+            document.getElementById('ruleEnabled').checked = !!r.enabled;
+            new bootstrap.Modal(document.getElementById('ruleModal')).show();
+        } catch (e) {
+            alert('加载规则失败: ' + e.message);
+        }
+    }
+</script>
+}
