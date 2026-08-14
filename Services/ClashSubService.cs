@@ -15,6 +15,7 @@ public class ClashSubService : IClashSubService
     private const string CacheKey = "clash_merged_sub_yaml";
     private const string RawCacheKey = "clash_raw_upstream_yaml";
     private const string NodesCacheKey = "clash_proxy_nodes";
+    private const string LastUpdateKey = "clash_last_upstream_update";
     private static readonly SemaphoreSlim _fetchLock = new(1, 1);
 
     public ClashSubService(
@@ -34,6 +35,12 @@ public class ClashSubService : IClashSubService
         _cache.Remove(CacheKey);
         _cache.Remove(RawCacheKey);
         _cache.Remove(NodesCacheKey);
+        _cache.Remove(LastUpdateKey);
+    }
+
+    public DateTimeOffset? GetLastUpstreamUpdate()
+    {
+        return _cache.TryGetValue(LastUpdateKey, out DateTimeOffset ts) ? ts : null;
     }
 
     public async Task<string> GetMergedSubAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default)
@@ -83,6 +90,7 @@ public class ClashSubService : IClashSubService
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(Math.Min(cacheMinutes * 2, 1440))
             };
             _cache.Set(CacheKey, mergedYaml, cacheOpts);
+            _cache.Set(LastUpdateKey, DateTimeOffset.Now, cacheOpts);
 
             return mergedYaml;
         }

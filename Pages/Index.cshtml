@@ -1,3 +1,4 @@
+
 @page
 @using ClashServer.Models
 @model IndexModel
@@ -239,6 +240,22 @@
                         <input type="text" class="form-control" value="@Model.Settings.UpstreamUrl" readonly placeholder="请先在【设置】页面配置上游订阅 URL">
                     </div>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label small text-muted mb-1">最后更新时间</label>
+                    <div class="d-flex align-items-center gap-2">
+                        @if (Model.LastUpstreamUpdate.HasValue)
+                        {
+                            <span class="badge text-bg-info">
+                                <i class="bi bi-clock-history me-1"></i>@Model.LastUpstreamUpdate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                            </span>
+                            <span class="text-muted small" id="lastUpdateAgo">计算中...</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted small">尚未拉取上游数据</span>
+                        }
+                    </div>
+                </div>
                 <div class="d-flex align-items-center gap-2 mb-3">
                     <span id="upstreamStatus">
                         <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
@@ -303,6 +320,30 @@
         }
     }
     document.addEventListener('DOMContentLoaded', testUpstream);
+
+    // 计算最后更新时间距今多久
+    function updateLastUpdateAgo() {
+        var el = document.getElementById('lastUpdateAgo');
+        if (!el) return;
+        var ts = parseFloat(el.getAttribute('data-ts'));
+        if (isNaN(ts)) return;
+        var diff = Math.floor((Date.now() - ts) / 1000);
+        var text;
+        if (diff < 60) text = diff + ' 秒前';
+        else if (diff < 3600) text = Math.floor(diff / 60) + ' 分钟前';
+        else if (diff < 86400) text = Math.floor(diff / 3600) + ' 小时前';
+        else text = Math.floor(diff / 86400) + ' 天前';
+        el.textContent = '(' + text + ')';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('lastUpdateAgo');
+        if (el) {
+            var ts = '@(Model.LastUpstreamUpdate?.ToUnixTimeSeconds() * 1000)';
+            if (ts && ts !== '') el.setAttribute('data-ts', ts);
+            updateLastUpdateAgo();
+            setInterval(updateLastUpdateAgo, 1000);
+        }
+    });
 
     // 事件委托：绑定测速按钮点击
     document.addEventListener('DOMContentLoaded', function() {

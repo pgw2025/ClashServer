@@ -8,6 +8,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IStorageService, StorageService>();
 builder.Services.AddSingleton<IClashSubService, ClashSubService>();
+builder.Services.AddHostedService<BackgroundRefreshService>();
 
 var app = builder.Build();
 

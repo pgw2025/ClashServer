@@ -24,6 +24,7 @@ public class IndexModel : PageModel
     public bool? UpstreamOk { get; set; }
     public bool? RefreshOk { get; set; }
     public string? NodesError { get; set; }
+    public DateTimeOffset? LastUpstreamUpdate { get; set; }
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -39,6 +40,7 @@ public class IndexModel : PageModel
         {
             var baseUrl = $"{Request.Scheme}://{Request.Host}";
             Nodes = await _subService.GetProxyNodesAsync(baseUrl);
+            LastUpstreamUpdate = _subService.GetLastUpstreamUpdate();
         }
         catch (Exception ex)
         {

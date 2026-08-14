@@ -10,4 +10,5 @@ public interface IClashSubService
     void ClearCache();
     Task<List<ProxyNode>> GetProxyNodesAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default);
     Task<ProxyNode> TestNodeLatencyAsync(ProxyNode node, CancellationToken ct = default);
+    DateTimeOffset? GetLastUpstreamUpdate();
 }
