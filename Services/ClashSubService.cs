@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Text.RegularExpressions;
 using ClashServer.Models;
@@ -12,6 +13,8 @@ public class ClashSubService : IClashSubService
     private readonly IMemoryCache _cache;
     private readonly ILogger<ClashSubService> _logger;
     private const string CacheKey = "clash_merged_sub_yaml";
+    private const string RawCacheKey = "clash_raw_upstream_yaml";
+    private const string NodesCacheKey = "clash_proxy_nodes";
     private static readonly SemaphoreSlim _fetchLock = new(1, 1);
 
     public ClashSubService(
@@ -29,6 +32,8 @@ public class ClashSubService : IClashSubService
     public void ClearCache()
     {
         _cache.Remove(CacheKey);
+        _cache.Remove(RawCacheKey);
+        _cache.Remove(NodesCacheKey);
     }
 
     public async Task<string> GetMergedSubAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default)
@@ -54,7 +59,10 @@ public class ClashSubService : IClashSubService
 
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("ClashServer/1.0 (+https://github.com/clash)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("clash-verge/v2.0.3");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Connection", "keep-alive");
 
             using var resp = await client.GetAsync(settings.UpstreamUrl, HttpCompletionOption.ResponseContentRead, ct);
             resp.EnsureSuccessStatusCode();
@@ -350,5 +358,272 @@ public class ClashSubService : IClashSubService
             result.Add(lines[i]);
 
         return string.Join("\n", result);
+    }
+
+    public async Task<List<ProxyNode>> GetProxyNodesAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default)
+    {
+        if (!forceRefresh && _cache.TryGetValue(NodesCacheKey, out List<ProxyNode>? cached) && cached != null)
+        {
+            return cached;
+        }
+
+        var rawYaml = await GetRawUpstreamYamlAsync(forceRefresh, ct);
+        var nodes = ParseProxyNodes(rawYaml);
+
+        var settings = await _storage.GetSettingsAsync();
+        var cacheMinutes = settings.CacheMinutes > 0 ? settings.CacheMinutes : 15;
+        _cache.Set(NodesCacheKey, nodes, TimeSpan.FromMinutes(cacheMinutes));
+
+        return nodes;
+    }
+
+    public async Task<ProxyNode> TestNodeLatencyAsync(ProxyNode node, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(node.Server))
+        {
+            node.Error = "节点缺少 server 信息";
+            return node;
+        }
+
+        try
+        {
+            using var ping = new Ping();
+            var reply = await ping.SendPingAsync(node.Server, TimeSpan.FromSeconds(5), null, null, ct);
+
+            if (reply.Status == IPStatus.Success)
+            {
+                node.Latency = (int)reply.RoundtripTime;
+                node.Error = null;
+            }
+            else
+            {
+                node.Latency = null;
+                node.Error = $"Ping 失败: {reply.Status}";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            node.Latency = null;
+            node.Error = "超时 (>5s)";
+        }
+        catch (Exception ex)
+        {
+            node.Latency = null;
+            node.Error = ex.Message;
+        }
+
+        return node;
+    }
+
+    private async Task<string> GetRawUpstreamYamlAsync(bool forceRefresh, CancellationToken ct)
+    {
+        if (!forceRefresh && _cache.TryGetValue(RawCacheKey, out string? cached) && !string.IsNullOrEmpty(cached))
+        {
+            return cached;
+        }
+
+        var settings = await _storage.GetSettingsAsync();
+        if (string.IsNullOrWhiteSpace(settings.UpstreamUrl))
+        {
+            throw new InvalidOperationException("未配置上游订阅 URL，请在设置中配置。");
+        }
+
+        var client = _httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+        // 模拟 OpenClash 请求头，兼容部分机场的 UA 检测
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("clash-verge/v2.0.3");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Connection", "keep-alive");
+
+        using var resp = await client.GetAsync(settings.UpstreamUrl, HttpCompletionOption.ResponseContentRead, ct);
+        resp.EnsureSuccessStatusCode();
+
+        var rawBytes = await resp.Content.ReadAsByteArrayAsync(ct);
+        var rawYaml = Encoding.UTF8.GetString(rawBytes).TrimStart('\uFEFF');
+
+        var cacheMinutes = settings.CacheMinutes > 0 ? settings.CacheMinutes : 15;
+        _cache.Set(RawCacheKey, rawYaml, TimeSpan.FromMinutes(cacheMinutes));
+
+        return rawYaml;
+    }
+
+    private static List<ProxyNode> ParseProxyNodes(string yaml)
+    {
+        var nodes = new List<ProxyNode>();
+        if (string.IsNullOrWhiteSpace(yaml)) return nodes;
+
+        var lines = yaml.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        int proxiesLineIdx = -1;
+        int proxiesIndent = 0;
+
+        // 找到 proxies: 行
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#'))
+                continue;
+
+            var trimmed = line.TrimStart();
+            var indent = line.Length - trimmed.Length;
+
+            if (Regex.IsMatch(trimmed, @"^proxies\s*:"))
+            {
+                proxiesLineIdx = i;
+                proxiesIndent = indent;
+                break;
+            }
+        }
+
+        if (proxiesLineIdx < 0) return nodes;
+
+        // 解析每个 proxy 条目
+        ProxyNode? current = null;
+        int itemIndent = -1;
+
+        for (int i = proxiesLineIdx + 1; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var trimmed = line.TrimStart();
+            var indent = line.Length - trimmed.Length;
+
+            // 遇到同级或更高级的键，proxies 段结束
+            if (indent <= proxiesIndent && !trimmed.StartsWith('#'))
+            {
+                if (current != null) nodes.Add(current);
+                break;
+            }
+
+            // 新的 proxy 条目（以 - 开头）
+            if (trimmed.StartsWith('-'))
+            {
+                if (current != null) nodes.Add(current);
+                current = new ProxyNode();
+                itemIndent = indent;
+
+                var afterDash = trimmed.Substring(1).Trim();
+
+                // Flow mapping 风格: { name: xxx, type: ss, ... }
+                if (afterDash.StartsWith('{'))
+                {
+                    ParseFlowMapping(current, afterDash);
+                }
+                // Block 风格: name: xxx （行内首个键值对）
+                else if (afterDash.Length > 0 && afterDash.Contains(':'))
+                {
+                    ApplyProxyField(current, afterDash);
+                }
+            }
+            else if (current != null && indent > itemIndent)
+            {
+                // Block 风格: 后续缩进行
+                if (trimmed.Contains(':'))
+                {
+                    ApplyProxyField(current, trimmed);
+                }
+            }
+        }
+
+        if (current != null) nodes.Add(current);
+
+        return nodes;
+    }
+
+    /// <summary>
+    /// 解析 flow mapping 风格的 proxy 条目，如 { name: xxx, type: ss, server: host, port: 443 }
+    /// </summary>
+    private static void ParseFlowMapping(ProxyNode node, string content)
+    {
+        // 去掉外层大括号
+        content = content.Trim();
+        if (content.StartsWith('{')) content = content.Substring(1);
+        var lastBrace = content.LastIndexOf('}');
+        if (lastBrace >= 0) content = content.Substring(0, lastBrace);
+
+        // 按逗号拆分（尊重嵌套大括号和引号）
+        var parts = SplitFlowFields(content);
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (trimmed.Length > 0 && trimmed.Contains(':'))
+            {
+                ApplyProxyField(node, trimmed);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 按逗号拆分 flow mapping 内容，跳过嵌套大括号和引号内的逗号
+    /// </summary>
+    private static List<string> SplitFlowFields(string content)
+    {
+        var parts = new List<string>();
+        var depth = 0;
+        var inQuote = false;
+        char quoteChar = '\0';
+        int start = 0;
+
+        for (int i = 0; i < content.Length; i++)
+        {
+            var c = content[i];
+
+            if (inQuote)
+            {
+                if (c == quoteChar) inQuote = false;
+            }
+            else if (c == '\'' || c == '"')
+            {
+                inQuote = true;
+                quoteChar = c;
+            }
+            else if (c == '{' || c == '[')
+            {
+                depth++;
+            }
+            else if (c == '}' || c == ']')
+            {
+                depth--;
+            }
+            else if (c == ',' && depth <= 0)
+            {
+                parts.Add(content.Substring(start, i - start));
+                start = i + 1;
+            }
+        }
+
+        if (start < content.Length)
+        {
+            parts.Add(content.Substring(start));
+        }
+
+        return parts;
+    }
+
+    private static void ApplyProxyField(ProxyNode node, string text)
+    {
+        var colonIdx = text.IndexOf(':');
+        if (colonIdx < 0) return;
+
+        var key = text.Substring(0, colonIdx).Trim();
+        var value = text.Substring(colonIdx + 1).Trim().Trim('\'', '"');
+
+        switch (key)
+        {
+            case "name":
+                node.Name = value;
+                break;
+            case "type":
+                node.Type = value;
+                break;
+            case "server":
+                node.Server = value;
+                break;
+            case "port":
+                if (int.TryParse(value, out var port))
+                    node.Port = port;
+                break;
+        }
     }
 }

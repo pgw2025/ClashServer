@@ -46,10 +46,12 @@ app.MapGet("/sub", async (HttpContext context, IClashSubService subService, ISto
         var yaml = await subService.GetMergedSubAsync(baseUrl, force, context.RequestAborted);
 
         context.Response.StatusCode = StatusCodes.Status200OK;
-        context.Response.ContentType = "application/x-yaml; charset=utf-8";
-        context.Response.Headers["Content-Disposition"] = "attachment; filename=\"config.yaml\"";
-        context.Response.Headers["Cache-Control"] = "public, max-age=900";
-        await context.Response.WriteAsync(yaml, Encoding.UTF8);
+        context.Response.ContentType = "text/html; charset=UTF-8";
+        // context.Response.ContentType = "application/x-yaml; charset=utf-8";
+        // context.Response.Headers["Content-Disposition"] = "attachment; filename=\"config.yaml\"";
+        // context.Response.Headers["Cache-Control"] = "public, max-age=900";
+        var yamlBytes = Encoding.UTF8.GetBytes(yaml);
+        await context.Response.Body.WriteAsync(yamlBytes);
     }
     catch (Exception ex)
     {

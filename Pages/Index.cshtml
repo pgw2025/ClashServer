@@ -1,4 +1,5 @@
 @page
+@using ClashServer.Models
 @model IndexModel
 @{
     ViewData["Title"] = "仪表盘";
@@ -53,11 +54,11 @@
             <div class="card-body">
                 <div class="d-flex align-items-center justify-content-between">
                     <div>
-                        <p class="text-muted small mb-1">已禁用</p>
-                        <h3 class="fw-bold mb-0 text-secondary">@(Model.Rules.Count - Model.EnabledRuleCount)</h3>
+                        <p class="text-muted small mb-1">代理节点</p>
+                        <h3 class="fw-bold mb-0 text-info">@Model.Nodes.Count</h3>
                     </div>
-                    <div class="bg-secondary bg-opacity-10 rounded-3 p-3">
-                        <i class="bi bi-toggle-off text-secondary fs-3"></i>
+                    <div class="bg-info bg-opacity-10 rounded-3 p-3">
+                        <i class="bi bi-diagram-3 text-info fs-3"></i>
                     </div>
                 </div>
             </div>
@@ -69,10 +70,10 @@
                 <div class="d-flex align-items-center justify-content-between">
                     <div>
                         <p class="text-muted small mb-1">缓存时长</p>
-                        <h3 class="fw-bold mb-0 text-info">@Model.Settings.CacheMinutes<span class="fs-6 ms-1">分钟</span></h3>
+                        <h3 class="fw-bold mb-0 text-warning">@Model.Settings.CacheMinutes<span class="fs-6 ms-1">分钟</span></h3>
                     </div>
-                    <div class="bg-info bg-opacity-10 rounded-3 p-3">
-                        <i class="bi bi-clock-history text-info fs-3"></i>
+                    <div class="bg-warning bg-opacity-10 rounded-3 p-3">
+                        <i class="bi bi-clock-history text-warning fs-3"></i>
                     </div>
                 </div>
             </div>
@@ -127,6 +128,95 @@
                 </div>
             </div>
         </div>
+
+        @if (!string.IsNullOrEmpty(Model.NodesError))
+        {
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-body text-center py-4">
+                    <div class="mb-2 text-warning"><i class="bi bi-exclamation-triangle fs-2"></i></div>
+                    <p class="text-muted mb-1">无法加载节点信息</p>
+                    <p class="text-danger small">@Model.NodesError</p>
+                    <p class="text-muted small">请检查上游订阅 URL 是否已正确配置。</p>
+                </div>
+            </div>
+        }
+        else if (Model.Nodes.Count > 0)
+        {
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-diagram-3 text-info me-2"></i>代理节点
+                        <span class="badge text-bg-info ms-1">@Model.Nodes.Count</span>
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-success" onclick="testAllLatency()">
+                            <i class="bi bi-speedometer me-1"></i>全部测速
+                        </button>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button class="btn btn-outline-secondary active" id="viewGridBtn" onclick="setView('grid')">
+                                <i class="bi bi-grid"></i>
+                            </button>
+                            <button class="btn btn-outline-secondary" id="viewListBtn" onclick="setView('list')">
+                                <i class="bi bi-list-ul"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="nodeGrid" class="row g-2">
+                        @foreach (var node in Model.Nodes)
+                        {
+                            <div class="col-md-6 col-xl-4 node-item" data-name="@node.Name">
+                                <div class="card border node-card h-100">
+                                    <div class="card-body p-2 d-flex align-items-center gap-2">
+                                        <span class="badge text-bg-@node.TypeBadgeColor node-type" style="min-width:45px;">@node.Type</span>
+                                        <div class="flex-grow-1 overflow-hidden">
+                                            <div class="fw-semibold text-truncate small" title="@node.Name">@node.Name</div>
+                                            <div class="text-muted" style="font-size:0.7rem;">@node.Server:@node.Port</div>
+                                        </div>
+                                        <span class="badge text-bg-secondary node-latency" data-name="@node.Name">
+                                            <i class="bi bi-dash-circle"></i>
+                                        </span>
+                                        <button class="btn btn-sm btn-outline-primary btn-action node-test-btn" data-name="@node.Name" title="测试延时">
+                                            <i class="bi bi-lightning-charge"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div id="nodeList" class="d-none">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:60px;">类型</th>
+                                        <th>节点名称</th>
+                                        <th>服务器</th>
+                                        <th style="width:80px;">端口</th>
+                                        <th style="width:100px;">延时</th>
+                                        <th style="width:60px;">测试</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var node in Model.Nodes)
+                                    {
+                                        <tr>
+                                            <td><span class="badge text-bg-@node.TypeBadgeColor">@node.Type</span></td>
+                                            <td class="fw-semibold small">@node.Name</td>
+                                            <td class="text-muted small font-monospace">@node.Server</td>
+                                            <td class="small">@node.Port</td>
+                                            <td><span class="badge text-bg-secondary node-latency" data-name="@node.Name"><i class="bi bi-dash-circle"></i></span></td>
+                                            <td><button class="btn btn-sm btn-outline-primary node-test-btn" data-name="@node.Name"><i class="bi bi-lightning-charge"></i></button></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
     </div>
 
     <div class="col-lg-4">
@@ -205,5 +295,117 @@
         }
     }
     document.addEventListener('DOMContentLoaded', testUpstream);
+
+    // 事件委托：绑定测速按钮点击
+    document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('click', function(e) {
+            var btn = e.target.closest('.node-test-btn');
+            if (btn) {
+                var name = btn.getAttribute('data-name');
+                if (name) testLatency(name);
+            }
+        });
+    });
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function updateLatencyBadge(name, latency, error) {
+        var badges = document.querySelectorAll('.node-latency[data-name="' + CSS.escape(name) + '"]');
+        badges.forEach(function(badge) {
+            if (error) {
+                badge.className = 'badge text-bg-danger node-latency';
+                badge.innerHTML = '<i class="bi bi-x-circle"></i>';
+                badge.title = error;
+            } else if (latency != null) {
+                var color = latency < 100 ? 'success' : latency < 300 ? 'primary' : latency < 1000 ? 'warning' : 'danger';
+                badge.className = 'badge text-bg-' + color + ' node-latency';
+                badge.innerHTML = latency + 'ms';
+                badge.title = latency + 'ms';
+            } else {
+                badge.className = 'badge text-bg-secondary node-latency';
+                badge.innerHTML = '<i class="bi bi-dash-circle"></i>';
+            }
+        });
+    }
+
+    function setBtnLoading(name, loading) {
+        var btns = document.querySelectorAll('.node-test-btn');
+        btns.forEach(function(btn) {
+            if (btn.getAttribute('data-name') === name) {
+                btn.disabled = loading;
+                if (loading) {
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+                } else {
+                    btn.innerHTML = '<i class="bi bi-lightning-charge"></i>';
+                }
+            }
+        });
+    }
+
+    async function testLatency(name) {
+        setBtnLoading(name, true);
+        updateLatencyBadge(name, null, null);
+        document.querySelectorAll('.node-latency[data-name="' + CSS.escape(name) + '"]').forEach(function(b) {
+            b.className = 'badge text-bg-info node-latency';
+            b.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        });
+        try {
+            var resp = await fetch('?handler=TestLatency&name=' + encodeURIComponent(name));
+            var data = await resp.json();
+            if (data.ok) {
+                updateLatencyBadge(name, data.latency, null);
+            } else {
+                updateLatencyBadge(name, null, data.error || '测试失败');
+            }
+        } catch (e) {
+            updateLatencyBadge(name, null, e.message);
+        }
+        setBtnLoading(name, false);
+    }
+
+    var testingAll = false;
+    async function testAllLatency() {
+        if (testingAll) return;
+        testingAll = true;
+        var names = [];
+        document.querySelectorAll('.node-latency').forEach(function(el) {
+            var n = el.getAttribute('data-name');
+            if (names.indexOf(n) === -1) names.push(n);
+        });
+        var concurrency = 8;
+        var idx = 0;
+        async function worker() {
+            while (idx < names.length) {
+                var name = names[idx++];
+                await testLatency(name);
+            }
+        }
+        var workers = [];
+        for (var i = 0; i < concurrency; i++) workers.push(worker());
+        await Promise.all(workers);
+        testingAll = false;
+    }
+
+    function setView(view) {
+        var grid = document.getElementById('nodeGrid');
+        var list = document.getElementById('nodeList');
+        var gridBtn = document.getElementById('viewGridBtn');
+        var listBtn = document.getElementById('viewListBtn');
+        if (view === 'list') {
+            grid.classList.add('d-none');
+            list.classList.remove('d-none');
+            gridBtn.classList.remove('active');
+            listBtn.classList.add('active');
+        } else {
+            grid.classList.remove('d-none');
+            list.classList.add('d-none');
+            gridBtn.classList.add('active');
+            listBtn.classList.remove('active');
+        }
+    }
 </script>
 }
