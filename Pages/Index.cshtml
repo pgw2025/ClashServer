@@ -143,12 +143,20 @@
         else if (Model.Nodes.Count > 0)
         {
             <div class="card border-0 shadow-sm mt-4">
-                <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom">
+                <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom flex-wrap gap-2">
                     <h5 class="mb-0 fw-bold">
                         <i class="bi bi-diagram-3 text-info me-2"></i>代理节点
                         <span class="badge text-bg-info ms-1">@Model.Nodes.Count</span>
                     </h5>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <select class="form-select form-select-sm" id="nodeSortSelect" onchange="sortNodes(this.value)" style="width:auto;">
+                            <option value="default">默认顺序</option>
+                            <option value="name-asc">名称 A-Z</option>
+                            <option value="name-desc">名称 Z-A</option>
+                            <option value="type">类型</option>
+                            <option value="latency-asc">延时 低→高</option>
+                            <option value="latency-desc">延时 高→低</option>
+                        </select>
                         <button class="btn btn-sm btn-outline-success" onclick="testAllLatency()">
                             <i class="bi bi-speedometer me-1"></i>全部测速
                         </button>
@@ -166,7 +174,7 @@
                     <div id="nodeGrid" class="row g-2">
                         @foreach (var node in Model.Nodes)
                         {
-                            <div class="col-md-6 col-xl-4 node-item" data-name="@node.Name">
+                            <div class="col-md-6 col-xl-4 node-item" data-name="@node.Name" data-type="@node.Type">
                                 <div class="card border node-card h-100">
                                     <div class="card-body p-2 d-flex align-items-center gap-2">
                                         <span class="badge text-bg-@node.TypeBadgeColor node-type" style="min-width:45px;">@node.Type</span>
@@ -201,7 +209,7 @@
                                 <tbody>
                                     @foreach (var node in Model.Nodes)
                                     {
-                                        <tr>
+                                        <tr data-name="@node.Name" data-type="@node.Type">
                                             <td><span class="badge text-bg-@node.TypeBadgeColor">@node.Type</span></td>
                                             <td class="fw-semibold small">@node.Name</td>
                                             <td class="text-muted small font-monospace">@node.Server</td>
@@ -406,6 +414,75 @@
             gridBtn.classList.add('active');
             listBtn.classList.remove('active');
         }
+    }
+
+    // 保存默认顺序
+    var gridOriginalOrder = null;
+    var listOriginalOrder = null;
+
+    function getLatencyFromBadge(container) {
+        var badge = container.querySelector('.node-latency');
+        if (!badge) return null;
+        var text = badge.textContent.trim();
+        var match = text.match(/(\d+)\s*ms/);
+        return match ? parseInt(match[1]) : null;
+    }
+
+    function sortNodes(sortBy) {
+        var grid = document.getElementById('nodeGrid');
+        var listBody = document.querySelector('#nodeList tbody');
+
+        // 保存默认顺序
+        if (!gridOriginalOrder) {
+            gridOriginalOrder = Array.from(grid.children);
+            listOriginalOrder = Array.from(listBody.children);
+        }
+
+        var gridItems = Array.from(gridOriginalOrder);
+        var listItems = Array.from(listOriginalOrder);
+
+        if (sortBy === 'default') {
+            gridOriginalOrder.forEach(function(el) { grid.appendChild(el); });
+            listOriginalOrder.forEach(function(el) { listBody.appendChild(el); });
+            return;
+        }
+
+        function getSortValue(item) {
+            if (sortBy === 'name-asc' || sortBy === 'name-desc') {
+                return item.getAttribute('data-name') || '';
+            }
+            if (sortBy === 'type') {
+                return item.getAttribute('data-type') || '';
+            }
+            if (sortBy === 'latency-asc' || sortBy === 'latency-desc') {
+                return getLatencyFromBadge(item);
+            }
+            return '';
+        }
+
+        function compare(a, b) {
+            var va = getSortValue(a);
+            var vb = getSortValue(b);
+
+            if (sortBy === 'latency-asc' || sortBy === 'latency-desc') {
+                // null (未测试) 排到最后
+                if (va == null && vb == null) return 0;
+                if (va == null) return 1;
+                if (vb == null) return -1;
+                return sortBy === 'latency-asc' ? va - vb : vb - va;
+            }
+
+            if (sortBy === 'name-desc') {
+                return vb.localeCompare(va, 'zh-CN');
+            }
+            return va.localeCompare(vb, 'zh-CN');
+        }
+
+        gridItems.sort(compare);
+        listItems.sort(compare);
+
+        gridItems.forEach(function(el) { grid.appendChild(el); });
+        listItems.forEach(function(el) { listBody.appendChild(el); });
     }
 </script>
 }
