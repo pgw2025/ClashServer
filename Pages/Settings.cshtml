@@ -68,6 +68,25 @@
                             关闭时，自定义规则会按上方设置插入/追加到上游规则列表中。
                         </div>
                     </div>
+                    <div class="mt-3 p-3 rounded border" style="background-color:#e8f5e9;">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" asp-for="Input.AutoGroupNodes" style="width:2.5rem;height:1.4rem;" id="autoGroupSwitch">
+                            <label class="form-check-label fw-semibold ms-2" for="Input_AutoGroupNodes"><i class="bi bi-diagram-3 text-success me-1"></i>自动分组代理节点</label>
+                        </div>
+                        <div class="form-text ms-3">
+                            开启后，输出 YAML 中的 <code>proxy-groups</code> 将被自动生成，按节点名称中的国家/地区关键词分组：<br>
+                            <span class="badge text-bg-light me-1">新加坡</span>
+                            <span class="badge text-bg-light me-1">香港</span>
+                            <span class="badge text-bg-light me-1">台湾</span>
+                            <span class="badge text-bg-light me-1">日本</span>
+                            <span class="badge text-bg-light me-1">美国</span>
+                            <span class="badge text-bg-light me-1">韩国</span>
+                            <span class="badge text-bg-light me-1">英国</span>
+                            <span class="badge text-bg-light me-1">德国</span>
+                            <span class="badge text-bg-light">其他</span><br>
+                            未匹配到关键词的节点归入「其他」组。同时生成「节点选择」「自动测速」「故障转移」三个聚合组。
+                        </div>
+                    </div>
                 </div>
             </div>
 

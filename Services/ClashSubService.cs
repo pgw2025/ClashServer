@@ -85,6 +85,11 @@ public class ClashSubService : IClashSubService
 
             var mergedYaml = MergeCustomRules(upstreamYaml, enabledRules, settings.InsertRulesBefore, settings.ReplaceMode);
 
+            if (settings.AutoGroupNodes)
+            {
+                mergedYaml = ApplyAutoGrouping(mergedYaml);
+            }
+
             var cacheMinutes = settings.CacheMinutes > 0 ? settings.CacheMinutes : 15;
             var cacheOpts = new MemoryCacheEntryOptions
             {
@@ -366,6 +371,270 @@ public class ClashSubService : IClashSubService
 
         for (int i = contentEnd; i < lines.Length; i++)
             result.Add(lines[i]);
+
+        return string.Join("\n", result);
+    }
+
+    /// <summary>
+    /// 按节点名称中的国家/地区关键词自动分组，替换或插入 proxy-groups 段
+    /// </summary>
+    private static string ApplyAutoGrouping(string yaml)
+    {
+        // 国家/地区关键词映射：关键词 → 分组名
+        var regionMap = new (string[] Keywords, string GroupName)[]
+        {
+            (new[] { "新加坡", "狮城", "sg", "singapore" }, "新加坡"),
+            (new[] { "香港", "hk", "hongkong", "hong kong" }, "香港"),
+            (new[] { "台湾", "tw", "taiwan", "tai wan" }, "台湾"),
+            (new[] { "日本", "jp", "japan", "东京", "大阪" }, "日本"),
+            (new[] { "美国", "us", "usa", "united states", "america", "洛杉矶", "圣何塞", "西雅图" }, "美国"),
+            (new[] { "韩国", "kr", "korea", "首尔" }, "韩国"),
+            (new[] { "英国", "uk", "england", "london", "伦敦" }, "英国"),
+            (new[] { "德国", "de", "germany", "法兰克福" }, "德国"),
+            (new[] { "法国", "fr", "france", "paris", "巴黎" }, "法国"),
+            (new[] { "加拿大", "ca", "canada", "多伦多", "温哥华" }, "加拿大"),
+            (new[] { "澳大利亚", "au", "australia", "悉尼" }, "澳大利亚"),
+            (new[] { "俄罗斯", "ru", "russia", "莫斯科" }, "俄罗斯"),
+            (new[] { "印度", "india", "孟买" }, "印度"),
+            (new[] { "土耳其", "tr", "turkey", "伊斯坦布尔" }, "土耳其"),
+            (new[] { "阿根廷", "ar", "argentina" }, "阿根廷"),
+            (new[] { "巴西", "br", "brazil" }, "巴西"),
+            (new[] { "荷兰", "nl", "netherlands", "amsterdam", "阿姆斯特丹" }, "荷兰"),
+            (new[] { "菲律宾", "ph", "philippines" }, "菲律宾"),
+            (new[] { "泰国", "th", "thailand" }, "泰国"),
+            (new[] { "越南", "vn", "vietnam" }, "越南"),
+        };
+
+        var lines = yaml.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+
+        // 1. 解析所有 proxy 名称
+        var proxyNames = new List<string>();
+        int proxiesLineIdx = -1;
+        int proxiesIndent = 0;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#'))
+                continue;
+            var trimmed = line.TrimStart();
+            if (Regex.IsMatch(trimmed, @"^proxies\s*:"))
+            {
+                proxiesLineIdx = i;
+                proxiesIndent = line.Length - trimmed.Length;
+                break;
+            }
+        }
+
+        if (proxiesLineIdx < 0) return yaml;
+
+        // 读取 proxy 名称
+        for (int i = proxiesLineIdx + 1; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var trimmed = line.TrimStart();
+            var indent = line.Length - trimmed.Length;
+            if (indent <= proxiesIndent && !string.IsNullOrWhiteSpace(trimmed) && !trimmed.StartsWith('#'))
+                break;
+            if (trimmed.StartsWith("- ") || trimmed.StartsWith("-{"))
+            {
+                var rest = trimmed.Substring(2).Trim();
+                if (rest.StartsWith("{"))
+                {
+                    // flow mapping
+                    var fields = SplitFlowFields(rest.TrimStart('{').TrimEnd('}'));
+                    foreach (var field in fields)
+                    {
+                        var colon = field.IndexOf(':');
+                        if (colon > 0)
+                        {
+                            var key = field.Substring(0, colon).Trim();
+                            var val = field.Substring(colon + 1).Trim().Trim('\'', '"');
+                            if (key == "name" && !string.IsNullOrWhiteSpace(val))
+                            {
+                                proxyNames.Add(val);
+                                break;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    var m = Regex.Match(rest, @"^name\s*:\s*(.+?)(?:,\s|$)");
+                    if (m.Success)
+                    {
+                        var name = m.Groups[1].Value.Trim().Trim('\'', '"');
+                        if (!string.IsNullOrWhiteSpace(name))
+                            proxyNames.Add(name);
+                    }
+                }
+            }
+        }
+
+        if (proxyNames.Count == 0) return yaml;
+
+        // 2. 按关键词分组
+        var groups = new List<(string Name, List<string> Proxies)>();
+        var assigned = new HashSet<string>();
+
+        foreach (var (keywords, groupName) in regionMap)
+        {
+            var matched = new List<string>();
+            foreach (var name in proxyNames)
+            {
+                if (assigned.Contains(name)) continue;
+                var lower = name.ToLowerInvariant();
+                foreach (var kw in keywords)
+                {
+                    if (lower.Contains(kw.ToLowerInvariant()))
+                    {
+                        matched.Add(name);
+                        assigned.Add(name);
+                        break;
+                    }
+                }
+            }
+            if (matched.Count > 0)
+                groups.Add((groupName, matched));
+        }
+
+        // 未匹配的 → 其他
+        var others = proxyNames.Where(n => !assigned.Contains(n)).ToList();
+        if (others.Count > 0)
+            groups.Add(("其他", others));
+
+        // 3. 生成 proxy-groups YAML 文本
+        var groupIndent = new string(' ', proxiesIndent);
+        var itemIndent = new string(' ', proxiesIndent + 2);
+        var fieldIndent = new string(' ', proxiesIndent + 4);
+
+        var sb = new StringBuilder();
+        sb.Append("proxy-groups:\n");
+
+        // 全局选择组
+        sb.Append($"{itemIndent}- name: \"🚀 节点选择\"\n");
+        sb.Append($"{fieldIndent}type: select\n");
+        sb.Append($"{fieldIndent}proxies:\n");
+        foreach (var g in groups)
+        {
+            sb.Append($"{fieldIndent}  - \"{g.Name}\"\n");
+        }
+        sb.Append($"{fieldIndent}  - DIRECT\n");
+        sb.Append($"{fieldIndent}  - REJECT\n");
+
+        // 自动测速组
+        sb.Append($"{itemIndent}- name: \"⚡ 自动测速\"\n");
+        sb.Append($"{fieldIndent}type: url-test\n");
+        sb.Append($"{fieldIndent}url: http://www.gstatic.com/generate_204\n");
+        sb.Append($"{fieldIndent}interval: 300\n");
+        sb.Append($"{fieldIndent}proxies:\n");
+        foreach (var name in proxyNames)
+        {
+            sb.Append($"{fieldIndent}  - \"{name}\"\n");
+        }
+
+        // 各地区分组
+        foreach (var g in groups)
+        {
+            sb.Append($"{itemIndent}- name: \"{g.Name}\"\n");
+            sb.Append($"{fieldIndent}type: url-test\n");
+            sb.Append($"{fieldIndent}url: http://www.gstatic.com/generate_204\n");
+            sb.Append($"{fieldIndent}interval: 300\n");
+            sb.Append($"{fieldIndent}proxies:\n");
+            foreach (var name in g.Proxies)
+            {
+                sb.Append($"{fieldIndent}  - \"{name}\"\n");
+            }
+        }
+
+        // 故障转移组
+        sb.Append($"{itemIndent}- name: \"🔄 故障转移\"\n");
+        sb.Append($"{fieldIndent}type: fallback\n");
+        sb.Append($"{fieldIndent}url: http://www.gstatic.com/generate_204\n");
+        sb.Append($"{fieldIndent}interval: 300\n");
+        sb.Append($"{fieldIndent}proxies:\n");
+        foreach (var g in groups)
+        {
+            sb.Append($"{fieldIndent}  - \"{g.Name}\"\n");
+        }
+
+        var groupsYaml = sb.ToString();
+
+        // 4. 替换或插入 proxy-groups 段
+        // 查找已有的 proxy-groups 段
+        int groupsLineIdx = -1;
+        int groupsIndent = 0;
+        int groupsEndIdx = -1;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#'))
+                continue;
+            var trimmed = line.TrimStart();
+            if (Regex.IsMatch(trimmed, @"^proxy-groups\s*:"))
+            {
+                groupsLineIdx = i;
+                groupsIndent = line.Length - trimmed.Length;
+                // 找到段结束位置
+                for (int j = i + 1; j < lines.Length; j++)
+                {
+                    var l = lines[j];
+                    if (string.IsNullOrWhiteSpace(l)) continue;
+                    var t = l.TrimStart();
+                    var ind = l.Length - t.Length;
+                    if (ind <= groupsIndent && !string.IsNullOrWhiteSpace(t) && !t.StartsWith('#'))
+                    {
+                        groupsEndIdx = j;
+                        break;
+                    }
+                }
+                if (groupsEndIdx < 0) groupsEndIdx = lines.Length;
+                break;
+            }
+        }
+
+        var result = new List<string>();
+
+        if (groupsLineIdx >= 0)
+        {
+            // 替换已有 proxy-groups 段
+            for (int i = 0; i < groupsLineIdx; i++)
+                result.Add(lines[i]);
+            // 插入新的 proxy-groups
+            foreach (var gl in groupsYaml.TrimEnd('\n').Split('\n'))
+                result.Add(gl);
+            // 插入剩余内容
+            for (int i = groupsEndIdx; i < lines.Length; i++)
+                result.Add(lines[i]);
+        }
+        else
+        {
+            // 没有 proxy-groups 段，在 proxies 段结束后插入
+            // 找到 proxies 段结束
+            int proxiesEndIdx = lines.Length;
+            for (int i = proxiesLineIdx + 1; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                var trimmed = line.TrimStart();
+                var indent = line.Length - trimmed.Length;
+                if (indent <= proxiesIndent && !string.IsNullOrWhiteSpace(trimmed) && !trimmed.StartsWith('#'))
+                {
+                    proxiesEndIdx = i;
+                    break;
+                }
+            }
+
+            for (int i = 0; i < proxiesEndIdx; i++)
+                result.Add(lines[i]);
+            result.Add("");
+            foreach (var gl in groupsYaml.TrimEnd('\n').Split('\n'))
+                result.Add(gl);
+            for (int i = proxiesEndIdx; i < lines.Length; i++)
+                result.Add(lines[i]);
+        }
 
         return string.Join("\n", result);
     }

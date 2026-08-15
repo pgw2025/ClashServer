@@ -28,6 +28,10 @@ public class AppSettings
     [Display(Name = "完全替换模式")]
     public bool ReplaceMode { get; set; } = false;
 
+    [JsonPropertyName("autoGroupNodes")]
+    [Display(Name = "自动分组节点")]
+    public bool AutoGroupNodes { get; set; } = true;
+
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
