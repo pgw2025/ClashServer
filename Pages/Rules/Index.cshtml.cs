@@ -34,9 +34,7 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync(string? edit = null)
     {
-        Rules = (await _storage.GetRulesAsync())
-            .OrderByDescending(r => r.UpdatedAt)
-            .ToList();
+        Rules = (await _storage.GetRulesAsync()).ToList();
 
         var settings = await _storage.GetSettingsAsync();
         AutoGroupNodes = settings.AutoGroupNodes;
@@ -86,8 +84,7 @@ public class IndexModel : PageModel
     {
         if (!ModelState.IsValid)
         {
-            Rules = (await _storage.GetRulesAsync())
-                .OrderByDescending(r => r.UpdatedAt).ToList();
+            Rules = (await _storage.GetRulesAsync()).ToList();
             try { ProxyGroups = await _subService.GetProxyGroupsAsync(); } catch { }
             StatusMessage = "❌ 输入有误，请检查字段";
             return Page();
@@ -99,7 +96,7 @@ public class IndexModel : PageModel
         {
             InputRule.Id = Guid.NewGuid();
             InputRule.UpdatedAt = DateTime.Now;
-            rules.Add(InputRule);
+            rules.Insert(0, InputRule);
             StatusMessage = "✅ 已新增规则";
         }
         else
@@ -109,7 +106,7 @@ public class IndexModel : PageModel
             {
                 InputRule.Id = Guid.NewGuid();
                 InputRule.UpdatedAt = DateTime.Now;
-                rules.Add(InputRule);
+                rules.Insert(0, InputRule);
                 StatusMessage = "✅ 已新增规则";
             }
             else
@@ -159,11 +156,60 @@ public class IndexModel : PageModel
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostBatchDeleteAsync(string[] selectedIds)
+    {
+        if (selectedIds == null || selectedIds.Length == 0)
+        {
+            StatusMessage = "⚠ 未选择规则";
+            return RedirectToPage();
+        }
+
+        var ids = selectedIds.Select(Guid.Parse).ToHashSet();
+        var rules = await _storage.GetRulesAsync();
+        int count = rules.RemoveAll(r => ids.Contains(r.Id));
+        await _storage.SaveRulesAsync(rules);
+        _subService.ClearCache();
+        StatusMessage = $"🗑️ 已批量删除 {count} 条规则";
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnGetJsonAsync(Guid id)
     {
         var rules = await _storage.GetRulesAsync();
         var rule = rules.FirstOrDefault(r => r.Id == id);
         if (rule == null) return NotFound();
         return new JsonResult(rule);
+    }
+
+    public async Task<IActionResult> OnPostMoveUpAsync(Guid id)
+    {
+        var rules = await _storage.GetRulesAsync();
+        var idx = rules.FindIndex(r => r.Id == id);
+        if (idx > 0)
+        {
+            (rules[idx - 1], rules[idx]) = (rules[idx], rules[idx - 1]);
+            rules[idx].UpdatedAt = DateTime.Now;
+            rules[idx - 1].UpdatedAt = DateTime.Now;
+            await _storage.SaveRulesAsync(rules);
+            _subService.ClearCache();
+            StatusMessage = "⬆ 已上移";
+        }
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostMoveDownAsync(Guid id)
+    {
+        var rules = await _storage.GetRulesAsync();
+        var idx = rules.FindIndex(r => r.Id == id);
+        if (idx >= 0 && idx < rules.Count - 1)
+        {
+            (rules[idx + 1], rules[idx]) = (rules[idx], rules[idx + 1]);
+            rules[idx].UpdatedAt = DateTime.Now;
+            rules[idx + 1].UpdatedAt = DateTime.Now;
+            await _storage.SaveRulesAsync(rules);
+            _subService.ClearCache();
+            StatusMessage = "⬇ 已下移";
+        }
+        return RedirectToPage();
     }
 }

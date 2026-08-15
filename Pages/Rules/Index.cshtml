@@ -3,9 +3,17 @@
 @model ClashServer.Pages.Rules.IndexModel
 @{
     ViewData["Title"] = "规则管理";
+
     var ruleTypes = CustomRule.AvailableRuleTypes;
+
     var policies = CustomRule.AvailablePolicies;
 }
+
+<style>
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { background-color: rgba(13, 110, 253, 0.05); }
+    .sort-icon { font-weight: normal; opacity: 0.7; }
+</style>
 
 <div class="d-flex flex-wrap align-items-center justify-content-between mb-4 gap-2">
     <div>
@@ -20,202 +28,270 @@
             <i class="bi bi-upload me-1"></i><span class="desktop-only">批量</span>导入
         </a>
         @if (Model.Rules.Count > 0)
+
         {
-            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearAllModal">
-                <i class="bi bi-trash me-1"></i><span class="desktop-only">清空</span>
-            </button>
+                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearAllModal">
+                    <i class="bi bi-trash me-1"></i><span class="desktop-only">清空</span>
+                </button>
         }
     </div>
 </div>
 
 @if (Model.Rules.Count > 0)
+
 {
-    <div class="mb-3">
-        <div class="input-group input-group-sm">
-            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-            <input type="text" id="ruleSearch" class="form-control" placeholder="搜索类型、匹配内容、策略、备注..." oninput="filterRules(this.value)">
-            <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('ruleSearch').value=''; filterRules('');">
-                <i class="bi bi-x-circle"></i>
-            </button>
+        <div class="mb-3">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="text" id="ruleSearch" class="form-control" placeholder="搜索类型、匹配内容、策略、备注..." oninput="filterRules(this.value)">
+                <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('ruleSearch').value=''; filterRules('');">
+                    <i class="bi bi-x-circle"></i>
+                </button>
+            </div>
+            <div class="form-text small mt-1" id="searchHint"></div>
         </div>
-        <div class="form-text small mt-1" id="searchHint"></div>
-    </div>
 }
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
+
 {
-    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
         @Model.StatusMessage
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
 }
 
 @if (Model.Rules.Count == 0)
-{
-    <div class="card border-0 shadow-sm">
-        <div class="card-body text-center py-5">
-            <div class="mb-3 text-primary opacity-50"><i class="bi bi-inbox fs-1"></i></div>
-            <h5 class="text-muted">还没有任何自定义规则</h5>
-            <p class="text-muted small">点击右上角「新增规则」开始添加，或前往「导入」页面批量粘贴 YAML。</p>
-            <div class="mt-3">
-                <button type="button" class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#ruleModal" onclick="openCreateModal()">
-                    <i class="bi bi-plus-lg me-1"></i>新增第一条规则
-                </button>
-                <a class="btn btn-outline-success" asp-page="/Rules/Import"><i class="bi bi-upload me-1"></i>批量导入</a>
-            </div>
-        </div>
-    </div>
-}
-else
-{
-    <!-- 批量操作栏 -->
-    <form id="batchForm" method="post" asp-page-handler="BatchPolicy"></form>
-    <div id="batchBar" class="card border-0 shadow-sm mb-3" style="display: none;">
-        <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap bg-dark text-white rounded">
-            <span id="batchCount" class="badge bg-light text-dark fs-6">0</span>
-            <span class="small">条已选</span>
-            <select id="batchPolicySelect" class="form-select form-select-sm" style="width: auto; max-width: 200px;" form="batchForm" name="batchPolicy">
-                <option value="">-- 选择策略 --</option>
-                <optgroup label="预置策略">
-                    @foreach (var p in CustomRule.AvailablePolicies)
-                    {
-                        <option value="@p">@p</option>
-                    }
-                </optgroup>
-                @if (Model.ProxyGroups.Count > 0)
-                {
-                    <optgroup label="@(Model.AutoGroupNodes ? "策略组（自动生成）" : "代理组（上游配置）")">
-                        @foreach (var g in Model.ProxyGroups)
-                        {
-                            <option value="@g">@g</option>
-                        }
-                    </optgroup>
-                }
-            </select>
-            <button type="submit" form="batchForm" class="btn btn-sm btn-warning fw-bold" onclick="return confirmBatch()">
-                <i class="bi bi-check2-all me-1"></i>批量应用策略
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-light ms-auto" onclick="clearSelection()">
-                <i class="bi bi-x-lg me-1"></i>取消选择
-            </button>
-        </div>
-    </div>
 
-    <div class="d-none d-md-block">
+{
         <div class="card border-0 shadow-sm">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th style="width: 40px;">
-                                <input class="form-check-input" type="checkbox" id="selectAllDesktop" onchange="toggleSelectAll(this)">
-                            </th>
-                            <th style="width: 90px;">状态</th>
-                            <th>类型</th>
-                            <th>匹配内容</th>
-                            <th style="width: 120px;">策略</th>
-                            <th>备注</th>
-                            <th style="width: 170px;">更新时间</th>
-                            <th style="width: 120px;" class="text-end">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var r in Model.Rules)
-                        {
-                            var searchData = $"{r.RuleType} {r.Target} {r.Policy} {r.Remark}".ToLowerInvariant();
-                            <tr class="@(r.Enabled ? "" : "table-secondary opacity-75")" data-search="@searchData">
-                                <td>
-                                    <input class="form-check-input rule-checkbox" type="checkbox" name="selectedIds" value="@r.Id" form="batchForm">
-                                </td>
-                                <td>
-                                    <form method="post" asp-page-handler="Toggle" class="d-inline" onsubmit="return confirmToggle(this)">
-                                        <input type="hidden" name="id" value="@r.Id">
-                                        <div class="form-check form-switch m-0 p-0">
-                                            <input class="form-check-input ms-0" type="checkbox" role="switch"
-                                                   @(r.Enabled ? "checked" : "") style="width:2.2rem;height:1.2rem;"
-                                                   onchange="this.form.submit()">
-                                        </div>
-                                    </form>
-                                </td>
-                                <td><span class="badge @(r.Enabled ? "bg-primary" : "bg-secondary")">@r.RuleType</span></td>
-                                <td class="font-monospace small">@r.Target</td>
-                                <td>
-                                    <span class="badge @(r.Policy == "REJECT" ? "bg-danger" : r.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">
-                                        @r.Policy
-                                    </span>
-                                </td>
-                                <td class="text-muted small">@(string.IsNullOrWhiteSpace(r.Remark) ? "—" : r.Remark)</td>
-                                <td class="text-muted small">@r.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</td>
-                                <td class="text-end">
-                                    <button type="button" class="btn btn-sm btn-outline-primary btn-action" title="编辑"
-                                            onclick='openEditModal("@r.Id")'>
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                    <form method="post" asp-page-handler="Delete" class="d-inline" onsubmit="return confirm('确认删除该规则?')">
-                                        <input type="hidden" name="id" value="@r.Id">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger btn-action" title="删除">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div class="d-md-none">
-        <div class="mb-2">
-            <div class="form-check d-inline-block">
-                <input class="form-check-input" type="checkbox" id="selectAllMobile" onchange="toggleSelectAll(this)">
-                <label class="form-check-label small text-muted" for="selectAllMobile">全选</label>
-            </div>
-        </div>
-        @foreach (var r in Model.Rules)
-        {
-            var searchData = $"{r.RuleType} {r.Target} {r.Policy} {r.Remark}".ToLowerInvariant();
-            <div class="card rule-card border-0 shadow-sm" data-search="@searchData">
-                <div class="card-body p-3 @(r.Enabled ? "" : "opacity-75 bg-light")">
-                    <div class="d-flex align-items-start justify-content-between mb-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <input class="form-check-input rule-checkbox" type="checkbox" name="selectedIds" value="@r.Id" form="batchForm">
-                            <span class="badge @(r.Enabled ? "bg-primary" : "bg-secondary") me-1">@r.RuleType</span>
-                            <span class="badge @(r.Policy == "REJECT" ? "bg-danger" : r.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">@r.Policy</span>
-                        </div>
-                        <form method="post" asp-page-handler="Toggle" onsubmit="return confirmToggle(this)">
-                            <input type="hidden" name="id" value="@r.Id">
-                            <div class="form-check form-switch m-0 p-0">
-                                <input class="form-check-input ms-0" type="checkbox" role="switch"
-                                       @(r.Enabled ? "checked" : "") style="width:2.5rem;height:1.4rem;"
-                                       onchange="this.form.submit()">
-                            </div>
-                        </form>
-                    </div>
-                    <div class="font-monospace small mb-2 text-break">@r.Target</div>
-                    @if (!string.IsNullOrWhiteSpace(r.Remark))
-                    {
-                        <div class="text-muted small mb-2"><i class="bi bi-chat-left-text me-1"></i>@r.Remark</div>
-                    }
-                    <div class="d-flex align-items-center justify-content-between mt-2 pt-2 border-top">
-                        <small class="text-muted"><i class="bi bi-clock me-1"></i>@r.UpdatedAt.ToString("MM-dd HH:mm")</small>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick='openEditModal("@r.Id")'>
-                                <i class="bi bi-pencil me-1"></i>编辑
-                            </button>
-                            <form method="post" asp-page-handler="Delete" class="d-inline" onsubmit="return confirm('确认删除该规则?')">
-                                <input type="hidden" name="id" value="@r.Id">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">
-                                    <i class="bi bi-trash me-1"></i>删除
-                                </button>
-                            </form>
-                        </div>
-                    </div>
+            <div class="card-body text-center py-5">
+                <div class="mb-3 text-primary opacity-50"><i class="bi bi-inbox fs-1"></i></div>
+                <h5 class="text-muted">还没有任何自定义规则</h5>
+                <p class="text-muted small">点击右上角「新增规则」开始添加，或前往「导入」页面批量粘贴 YAML。</p>
+                <div class="mt-3">
+                    <button type="button" class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#ruleModal" onclick="openCreateModal()">
+                        <i class="bi bi-plus-lg me-1"></i>新增第一条规则
+                    </button>
+                    <a class="btn btn-outline-success" asp-page="/Rules/Import"><i class="bi bi-upload me-1"></i>批量导入</a>
                 </div>
             </div>
+        </div>
+}
+
+else
+
+{
+        <!-- 批量操作栏 -->
+        <form id="batchForm" method="post" asp-page-handler="BatchPolicy"></form>
+        <form id="batchDeleteForm" method="post" asp-page-handler="BatchDelete"></form>
+        <div id="batchBar" class="card border-0 shadow-sm mb-3" style="display: none;">
+            <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap bg-dark text-white rounded">
+                <span id="batchCount" class="badge bg-light text-dark fs-6">0</span>
+                <span class="small">条已选</span>
+                <select id="batchPolicySelect" class="form-select form-select-sm" style="width: auto; max-width: 200px;" form="batchForm" name="batchPolicy">
+                    <option value="">-- 选择策略 --</option>
+                    <optgroup label="预置策略">
+                    @foreach (var p in CustomRule.AvailablePolicies)
+
+                    {
+                                <option value="@p">@p</option>
+                    }
+                    </optgroup>
+                @if (Model.ProxyGroups.Count > 0)
+                {
+                            <optgroup label="@(Model.AutoGroupNodes ? "策略组（自动生成）" : "代理组（上游配置）")">
+                        @foreach (var g in Model.ProxyGroups)
+
+                        {
+                                        <option value="@g">@g</option>
+                        }
+                            </optgroup>
+                }
+                </select>
+                <button type="submit" form="batchForm" class="btn btn-sm btn-warning fw-bold" onclick="return confirmBatch()">
+                    <i class="bi bi-check2-all me-1"></i>批量应用策略
+                </button>
+                <button type="submit" form="batchDeleteForm" class="btn btn-sm btn-outline-danger" onclick="return confirmBatchDelete()">
+                    <i class="bi bi-trash me-1"></i>批量删除
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-light ms-auto" onclick="clearSelection()">
+                    <i class="bi bi-x-lg me-1"></i>取消选择
+                </button>
+            </div>
+        </div>
+
+        <div class="d-none d-md-block">
+            <div class="card border-0 shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="rulesTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;">
+                                    <input class="form-check-input" type="checkbox" id="selectAllDesktop" onchange="toggleSelectAll(this)">
+                                </th>
+                                <th style="width: 90px;">状态</th>
+                                <th class="sortable cursor-pointer" data-sort="ruleType" onclick="sortBy('ruleType')">
+                                    类型 <span class="sort-icon" data-for="ruleType"></span>
+                                </th>
+                                <th class="sortable cursor-pointer" data-sort="target" onclick="sortBy('target')">
+                                    匹配内容 <span class="sort-icon" data-for="target"></span>
+                                </th>
+                                <th style="width: 120px;" class="sortable cursor-pointer" data-sort="policy" onclick="sortBy('policy')">
+                                    策略 <span class="sort-icon" data-for="policy"></span>
+                                </th>
+                                <th>备注</th>
+                                <th style="width: 170px;" class="sortable cursor-pointer" data-sort="updatedAt" onclick="sortBy('updatedAt')">
+                                    更新时间 <span class="sort-icon" data-for="updatedAt"></span>
+                                </th>
+                                <th style="width: 200px;" class="text-end">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rulesTbody">
+                        @foreach (var r in Model.Rules.Select((rule, index) => (rule, index)))
+
+                        {
+
+                            var searchData = $"{r.rule.RuleType} {r.rule.Target} {r.rule.Policy} {r.rule.Remark}".ToLowerInvariant();
+                                    <tr class="@(r.rule.Enabled ? "" : "table-secondary opacity-75")"
+                                        data-search="@searchData"
+                                        data-rule-type="@r.rule.RuleType"
+                                        data-target="@r.rule.Target.ToLowerInvariant()"
+                                        data-policy="@r.rule.Policy.ToLowerInvariant()"
+                                        data-updated-at="@r.rule.UpdatedAt.Ticks"
+                                        data-index="@r.index">
+                                        <td>
+                                            <input class="form-check-input rule-checkbox" type="checkbox" name="selectedIds" value="@r.rule.Id" form="batchForm">
+                                        </td>
+                                        <td>
+                                            <form method="post" asp-page-handler="Toggle" class="d-inline" onsubmit="return confirmToggle(this)">
+                                                <input type="hidden" name="id" value="@r.rule.Id">
+                                                <div class="form-check form-switch m-0 p-0">
+                                                    <input class="form-check-input ms-0" type="checkbox" role="switch"
+                                            @(r.rule.Enabled ? "checked" : "") style="width:2.2rem;height:1.2rem;"
+                                                           onchange="this.form.submit()">
+                                                </div>
+                                            </form>
+                                        </td>
+                                        <td><span class="badge @(r.rule.Enabled ? "bg-primary" : "bg-secondary")">@r.rule.RuleType</span></td>
+                                        <td class="font-monospace small">@r.rule.Target</td>
+                                        <td>
+                                            <span class="badge @(r.rule.Policy == "REJECT" ? "bg-danger" : r.rule.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">
+                                        @r.rule.Policy
+                                            </span>
+                                        </td>
+                                        <td class="text-muted small">@(string.IsNullOrWhiteSpace(r.rule.Remark) ? "—" : r.rule.Remark)</td>
+                                        <td class="text-muted small">@r.rule.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td class="text-end">
+                                            <span class="d-inline" style="@(r.index == 0 ? "visibility:hidden" : null)">
+                                                <form method="post" asp-page-handler="MoveUp" class="d-inline">
+                                                    <input type="hidden" name="id" value="@r.rule.Id">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary btn-action" title="上移">
+                                                        <i class="bi bi-arrow-up"></i>
+                                                    </button>
+                                                </form>
+                                            </span>
+                                            <span class="d-inline" style="@(r.index == Model.Rules.Count - 1 ? "visibility:hidden" : null)">
+                                                <form method="post" asp-page-handler="MoveDown" class="d-inline">
+                                                    <input type="hidden" name="id" value="@r.rule.Id">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary btn-action" title="下移">
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    </button>
+                                                </form>
+                                            </span>
+                                            <button type="button" class="btn btn-sm btn-outline-primary btn-action" title="编辑"
+                                                    onclick='openEditModal("@r.rule.Id")'>
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <form method="post" asp-page-handler="Delete" class="d-inline" onsubmit="return confirm('确认删除该规则?')">
+                                                <input type="hidden" name="id" value="@r.rule.Id">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger btn-action" title="删除">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-md-none" id="mobileCards">
+            <div class="mb-2">
+                <div class="form-check d-inline-block">
+                    <input class="form-check-input" type="checkbox" id="selectAllMobile" onchange="toggleSelectAll(this)">
+                    <label class="form-check-label small text-muted" for="selectAllMobile">全选</label>
+                </div>
+            </div>
+        @foreach (var r in Model.Rules.Select((rule, index) => (rule, index)))
+
+        {
+
+            var searchData = $"{r.rule.RuleType} {r.rule.Target} {r.rule.Policy} {r.rule.Remark}".ToLowerInvariant();
+                    <div class="card rule-card border-0 shadow-sm mb-2"
+                         data-search="@searchData"
+                         data-rule-type="@r.rule.RuleType"
+                         data-target="@r.rule.Target.ToLowerInvariant()"
+                         data-policy="@r.rule.Policy.ToLowerInvariant()"
+                         data-updated-at="@r.rule.UpdatedAt.Ticks"
+                         data-index="@r.index">
+                        <div class="card-body p-3 @(r.rule.Enabled ? "" : "opacity-75 bg-light")">
+                            <div class="d-flex align-items-start justify-content-between mb-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <input class="form-check-input rule-checkbox" type="checkbox" name="selectedIds" value="@r.rule.Id" form="batchForm">
+                                    <span class="badge @(r.rule.Enabled ? "bg-primary" : "bg-secondary") me-1">@r.rule.RuleType</span>
+                                    <span class="badge @(r.rule.Policy == "REJECT" ? "bg-danger" : r.rule.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">@r.rule.Policy</span>
+                                </div>
+                                <form method="post" asp-page-handler="Toggle" onsubmit="return confirmToggle(this)">
+                                    <input type="hidden" name="id" value="@r.rule.Id">
+                                    <div class="form-check form-switch m-0 p-0">
+                                        <input class="form-check-input ms-0" type="checkbox" role="switch"
+                                @(r.rule.Enabled ? "checked" : "") style="width:2.5rem;height:1.4rem;"
+                                               onchange="this.form.submit()">
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="font-monospace small mb-2 text-break">@r.rule.Target</div>
+                    @if (!string.IsNullOrWhiteSpace(r.rule.Remark))
+                    {
+                                    <div class="text-muted small mb-2"><i class="bi bi-chat-left-text me-1"></i>@r.rule.Remark</div>
+                    }
+                            <div class="d-flex align-items-center justify-content-between mt-2 pt-2 border-top">
+                                <small class="text-muted"><i class="bi bi-clock me-1"></i>@r.rule.UpdatedAt.ToString("MM-dd HH:mm")</small>
+                                <div class="d-flex gap-1">
+                                    <span class="d-inline" style="@(r.index == 0 ? "visibility:hidden" : null)">
+                                        <form method="post" asp-page-handler="MoveUp" class="d-inline">
+                                            <input type="hidden" name="id" value="@r.rule.Id">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="上移">
+                                                <i class="bi bi-arrow-up"></i>
+                                            </button>
+                                        </form>
+                                    </span>
+                                    <span class="d-inline" style="@(r.index == Model.Rules.Count - 1 ? "visibility:hidden" : null)">
+                                        <form method="post" asp-page-handler="MoveDown" class="d-inline">
+                                            <input type="hidden" name="id" value="@r.rule.Id">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="下移">
+                                                <i class="bi bi-arrow-down"></i>
+                                            </button>
+                                        </form>
+                                    </span>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick='openEditModal("@r.rule.Id")'>
+                                        <i class="bi bi-pencil me-1"></i>编辑
+                                    </button>
+                                    <form method="post" asp-page-handler="Delete" class="d-inline" onsubmit="return confirm('确认删除该规则?')">
+                                        <input type="hidden" name="id" value="@r.rule.Id">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash me-1"></i>删除
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
         }
-    </div>
+        </div>
 }
 
 <div class="modal fade" id="ruleModal" tabindex="-1" aria-labelledby="ruleModalLabel" aria-hidden="true">
@@ -235,8 +311,9 @@ else
                             <select class="form-select" asp-for="InputRule.RuleType" id="ruleType" required>
                                 <option value="">-- 请选择 --</option>
                                 @foreach (var t in ruleTypes)
+
                                 {
-                                    <option value="@t">@t</option>
+                                        <option value="@t">@t</option>
                                 }
                             </select>
                             <span asp-validation-for="InputRule.RuleType" class="text-danger small"></span>
@@ -247,23 +324,27 @@ else
                                 <option value="">-- 请选择 --</option>
                                 <optgroup label="预置策略">
                                     @foreach (var p in policies)
+
                                     {
-                                        <option value="@p">@p</option>
+                                            <option value="@p">@p</option>
                                     }
                                 </optgroup>
                                 @if (Model.ProxyGroups.Count > 0)
+
                                 {
-                                    <optgroup label="代理组（上游配置）">
+                                        <optgroup label="代理组（上游配置）">
                                         @foreach (var g in Model.ProxyGroups)
+
                                         {
-                                            <option value="@g">@g</option>
+                                                    <option value="@g">@g</option>
                                         }
-                                    </optgroup>
+                                        </optgroup>
                                 }
                             </select>
                             @if (!string.IsNullOrEmpty(Model.GroupsError))
+
                             {
-                                <div class="text-warning small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>无法加载代理组: @Model.GroupsError</div>
+                                    <div class="text-warning small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>无法加载代理组: @Model.GroupsError</div>
                             }
                             <span asp-validation-for="InputRule.Policy" class="text-danger small"></span>
                         </div>
@@ -315,128 +396,223 @@ else
 </div>
 
 @section Scripts {
-<script>
-    function confirmToggle(form) {
-        return true;
-    }
+    <script>
+        function confirmToggle(form) {
+            return true;
+        }
 
-    function filterRules(keyword) {
-        var kw = (keyword || '').trim().toLowerCase();
-        var items = document.querySelectorAll('[data-search]');
-        var visible = 0;
-        var total = items.length;
-        items.forEach(function(el) {
-            var data = el.getAttribute('data-search') || '';
-            if (!kw || data.indexOf(kw) >= 0) {
-                el.style.display = '';
-                visible++;
-            } else {
-                el.style.display = 'none';
+        function filterRules(keyword) {
+            var kw = (keyword || '').trim().toLowerCase();
+            var items = document.querySelectorAll('[data-search]');
+            var visible = 0;
+            var total = items.length;
+            items.forEach(function(el) {
+                var data = el.getAttribute('data-search') || '';
+                if (!kw || data.indexOf(kw) >= 0) {
+                    el.style.display = '';
+                    visible++;
+                } else {
+                    el.style.display = 'none';
+                }
+            });
+            var hint = document.getElementById('searchHint');
+            if (hint) {
+                if (!kw) {
+                    hint.textContent = '';
+                } else {
+                    hint.textContent = '找到 ' + visible + ' / ' + total + ' 条匹配';
+                }
             }
-        });
-        var hint = document.getElementById('searchHint');
-        if (hint) {
-            if (!kw) {
-                hint.textContent = '';
+        }
+
+        function updateBatchBar() {
+            var checked = document.querySelectorAll('.rule-checkbox:checked');
+            var bar = document.getElementById('batchBar');
+            var count = document.getElementById('batchCount');
+            if (checked.length > 0) {
+                bar.style.display = 'flex';
+                count.textContent = checked.length;
             } else {
-                hint.textContent = '找到 ' + visible + ' / ' + total + ' 条匹配';
+                bar.style.display = 'none';
+            }
+            // 同步全选状态
+            var allDesktop = document.getElementById('selectAllDesktop');
+            var allMobile = document.getElementById('selectAllMobile');
+            var all = document.querySelectorAll('.rule-checkbox');
+            var checkedAll = checked.length === all.length;
+            if (allDesktop) allDesktop.checked = checkedAll;
+            if (allMobile) allMobile.checked = checkedAll;
+        }
+
+        function toggleSelectAll(src) {
+            document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
+                cb.checked = src.checked;
+            });
+            updateBatchBar();
+        }
+
+        function clearSelection() {
+            document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
+                cb.checked = false;
+            });
+            var allDesktop = document.getElementById('selectAllDesktop');
+            var allMobile = document.getElementById('selectAllMobile');
+            if (allDesktop) allDesktop.checked = false;
+            if (allMobile) allMobile.checked = false;
+            updateBatchBar();
+        }
+
+        function confirmBatch() {
+            var checked = document.querySelectorAll('.rule-checkbox:checked');
+            var policy = document.getElementById('batchPolicySelect').value;
+            if (checked.length === 0) {
+                alert('请先选择规则');
+                return false;
+            }
+            if (!policy) {
+                alert('请选择要应用的策略');
+                return false;
+            }
+            // 将选中的 id 动态填入表单
+            var form = document.getElementById('batchForm');
+            form.querySelectorAll('input[name="selectedIds"]').forEach(function(el) { el.remove(); });
+            checked.forEach(function(cb) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'selectedIds';
+                input.value = cb.value;
+                form.appendChild(input);
+            });
+            return true;
+        }
+
+        function confirmBatchDelete() {
+            var checked = document.querySelectorAll('.rule-checkbox:checked');
+            if (checked.length === 0) {
+                alert('请先选择规则');
+                return false;
+            }
+            if (!confirm('确认删除选中的 ' + checked.length + ' 条规则？此操作不可恢复。')) {
+                return false;
+            }
+            var form = document.getElementById('batchDeleteForm');
+            form.querySelectorAll('input[name="selectedIds"]').forEach(function(el) { el.remove(); });
+            checked.forEach(function(cb) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'selectedIds';
+                input.value = cb.value;
+                form.appendChild(input);
+            });
+            return true;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
+                cb.addEventListener('change', updateBatchBar);
+            });
+        });
+
+        var _sortColumn = '';
+        var _sortDirection = 'asc';
+
+        function sortBy(column) {
+            // 切换排序方向
+            if (_sortColumn === column) {
+                _sortDirection = _sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                _sortColumn = column;
+                _sortDirection = 'asc';
+            }
+            // 更新排序图标
+            document.querySelectorAll('.sort-icon').forEach(function(el) {
+                el.textContent = '';
+            });
+            var icon = document.querySelector('.sort-icon[data-for="' + column + '"]');
+            if (icon) {
+                icon.textContent = _sortDirection === 'asc' ? ' ↑' : ' ↓';
+            }
+            // 排序桌面端表格行
+            var tbody = document.getElementById('rulesTbody');
+            if (tbody) {
+                var rows = Array.from(tbody.querySelectorAll('tr[data-search]'));
+                rows.sort(function(a, b) {
+                    return compareRow(a, b, column);
+                });
+                rows.forEach(function(row) { tbody.appendChild(row); });
+                // 重排后重新更新上移/下移按钮的可见性
+                updateMoveButtons(tbody.querySelectorAll('tr'), true);
+            }
+            // 排序移动端卡片
+            var mobileContainer = document.getElementById('mobileCards');
+            if (mobileContainer) {
+                var cards = Array.from(mobileContainer.querySelectorAll('.rule-card'));
+                cards.sort(function(a, b) {
+                    return compareRow(a, b, column);
+                });
+                var selectAllBar = mobileContainer.querySelector('.mb-2');
+                cards.forEach(function(card) { mobileContainer.appendChild(card); });
+                updateMoveButtons(cards, false);
             }
         }
-    }
 
-    function updateBatchBar() {
-        var checked = document.querySelectorAll('.rule-checkbox:checked');
-        var bar = document.getElementById('batchBar');
-        var count = document.getElementById('batchCount');
-        if (checked.length > 0) {
-            bar.style.display = 'flex';
-            count.textContent = checked.length;
-        } else {
-            bar.style.display = 'none';
+        function compareRow(a, b, column) {
+            var attr = 'data-' + column.replace(/([A-Z])/g, '-$1').toLowerCase();
+            var va = (a.getAttribute(attr) || '').toString();
+            var vb = (b.getAttribute(attr) || '').toString();
+            var cmp = 0;
+            if (column === 'updatedAt') {
+                var na = parseInt(va, 10) || 0;
+                var nb = parseInt(vb, 10) || 0;
+                cmp = na - nb;
+            } else {
+                cmp = va.localeCompare(vb, 'zh-CN', { numeric: true, sensitivity: 'base' });
+            }
+            return _sortDirection === 'asc' ? cmp : -cmp;
         }
-        // 同步全选状态
-        var allDesktop = document.getElementById('selectAllDesktop');
-        var allMobile = document.getElementById('selectAllMobile');
-        var all = document.querySelectorAll('.rule-checkbox');
-        var checkedAll = checked.length === all.length;
-        if (allDesktop) allDesktop.checked = checkedAll;
-        if (allMobile) allMobile.checked = checkedAll;
-    }
 
-    function toggleSelectAll(src) {
-        document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
-            cb.checked = src.checked;
-        });
-        updateBatchBar();
-    }
-
-    function clearSelection() {
-        document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
-            cb.checked = false;
-        });
-        var allDesktop = document.getElementById('selectAllDesktop');
-        var allMobile = document.getElementById('selectAllMobile');
-        if (allDesktop) allDesktop.checked = false;
-        if (allMobile) allMobile.checked = false;
-        updateBatchBar();
-    }
-
-    function confirmBatch() {
-        var checked = document.querySelectorAll('.rule-checkbox:checked');
-        var policy = document.getElementById('batchPolicySelect').value;
-        if (checked.length === 0) {
-            alert('请先选择规则');
-            return false;
+        function updateMoveButtons(items, isTable) {
+            var total = items.length;
+            items.forEach(function(el, i) {
+                var upBtn;
+                var downBtn;
+                if (isTable) {
+                    upBtn = el.querySelector('form[asp-page-handler="MoveUp"] button') || el.querySelector('form[action*="MoveUp"] button');
+                    downBtn = el.querySelector('form[asp-page-handler="MoveDown"] button') || el.querySelector('form[action*="MoveDown"] button');
+                } else {
+                    upBtn = el.querySelector('form[asp-page-handler="MoveUp"] button') || el.querySelector('form[action*="MoveUp"] button');
+                    downBtn = el.querySelector('form[asp-page-handler="MoveDown"] button') || el.querySelector('form[action*="MoveDown"] button');
+                }
+                // 上移/下移按钮按后端原始顺序控制，前端排序时不改变显示/隐藏
+            });
         }
-        if (!policy) {
-            alert('请选择要应用的策略');
-            return false;
+
+        function openCreateModal() {
+            document.getElementById('modalTitle').textContent = '新增规则';
+            document.getElementById('ruleId').value = '00000000-0000-0000-0000-000000000000';
+            document.getElementById('ruleType').value = '';
+            document.getElementById('rulePolicy').value = '';
+            document.getElementById('ruleTarget').value = '';
+            document.getElementById('ruleRemark').value = '';
+            document.getElementById('ruleEnabled').checked = true;
         }
-        // 将选中的 id 动态填入表单
-        var form = document.getElementById('batchForm');
-        form.querySelectorAll('input[name="selectedIds"]').forEach(function(el) { el.remove(); });
-        checked.forEach(function(cb) {
-            var input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'selectedIds';
-            input.value = cb.value;
-            form.appendChild(input);
-        });
-        return true;
-    }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
-            cb.addEventListener('change', updateBatchBar);
-        });
-    });
-
-    function openCreateModal() {
-        document.getElementById('modalTitle').textContent = '新增规则';
-        document.getElementById('ruleId').value = '00000000-0000-0000-0000-000000000000';
-        document.getElementById('ruleType').value = '';
-        document.getElementById('rulePolicy').value = '';
-        document.getElementById('ruleTarget').value = '';
-        document.getElementById('ruleRemark').value = '';
-        document.getElementById('ruleEnabled').checked = true;
-    }
-
-    async function openEditModal(id) {
-        try {
-            var resp = await fetch('?handler=Json&id=' + id);
-            if (!resp.ok) throw new Error('加载失败');
-            var r = await resp.json();
-            document.getElementById('modalTitle').textContent = '编辑规则';
-            document.getElementById('ruleId').value = r.id;
-            document.getElementById('ruleType').value = r.ruleType || '';
-            document.getElementById('rulePolicy').value = r.policy || '';
-            document.getElementById('ruleTarget').value = r.target || '';
-            document.getElementById('ruleRemark').value = r.remark || '';
-            document.getElementById('ruleEnabled').checked = !!r.enabled;
-            new bootstrap.Modal(document.getElementById('ruleModal')).show();
-        } catch (e) {
-            alert('加载规则失败: ' + e.message);
+        async function openEditModal(id) {
+            try {
+                var resp = await fetch('?handler=Json&id=' + id);
+                if (!resp.ok) throw new Error('加载失败');
+                var r = await resp.json();
+                document.getElementById('modalTitle').textContent = '编辑规则';
+                document.getElementById('ruleId').value = r.id;
+                document.getElementById('ruleType').value = r.ruleType || '';
+                document.getElementById('rulePolicy').value = r.policy || '';
+                document.getElementById('ruleTarget').value = r.target || '';
+                document.getElementById('ruleRemark').value = r.remark || '';
+                document.getElementById('ruleEnabled').checked = !!r.enabled;
+                new bootstrap.Modal(document.getElementById('ruleModal')).show();
+            } catch (e) {
+                alert('加载规则失败: ' + e.message);
+            }
         }
-    }
-</script>
+    </script>
 }

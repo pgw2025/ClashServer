@@ -62,14 +62,20 @@ public class ImportModel : PageModel
         var lines = _subService.ParseYamlRules(YamlText);
         var existing = await _storage.GetRulesAsync();
         var added = 0;
+        var newRules = new List<CustomRule>();
         foreach (var line in lines)
         {
             var rule = ParseLineToRule(line);
             if (rule == null) continue;
             rule.Id = Guid.NewGuid();
             rule.UpdatedAt = DateTime.Now;
-            existing.Add(rule);
+            newRules.Add(rule);
             added++;
+        }
+        newRules.Reverse();
+        foreach (var rule in newRules)
+        {
+            existing.Insert(0, rule);
         }
         await _storage.SaveRulesAsync(existing);
         _subService.ClearCache();
@@ -140,10 +146,7 @@ public class ImportModel : PageModel
             return null;
         }
 
-        if (!validPolicies.Contains(rule.Policy) && !rule.Policy.StartsWith("🎯", StringComparison.Ordinal)
-                                                  && !rule.Policy.StartsWith("🚀", StringComparison.Ordinal)
-                                                  && !rule.Policy.StartsWith("🐟", StringComparison.Ordinal)
-                                                  && !rule.Policy.Contains('组', StringComparison.Ordinal)
+        if (!validPolicies.Contains(rule.Policy) && !rule.Policy.Contains('组', StringComparison.Ordinal)
                                                   && rule.Policy.Length < 80)
         {
         }

@@ -81,7 +81,7 @@ public class ClashSubService : IClashSubService
             upstreamYaml = upstreamYaml.TrimStart('\uFEFF');
 
             var rules = await _storage.GetRulesAsync();
-            var enabledRules = rules.Where(r => r.Enabled).OrderBy(r => r.UpdatedAt).ToList();
+            var enabledRules = rules.Where(r => r.Enabled).ToList();
 
             var mergedYaml = MergeCustomRules(upstreamYaml, enabledRules, settings.InsertRulesBefore, settings.ReplaceMode);
 
@@ -513,7 +513,7 @@ public class ClashSubService : IClashSubService
         sb.Append("proxy-groups:\n");
 
         // 全局选择组
-        sb.Append($"{itemIndent}- name: \"🚀 节点选择\"\n");
+        sb.Append($"{itemIndent}- name: \"节点选择\"\n");
         sb.Append($"{fieldIndent}type: select\n");
         sb.Append($"{fieldIndent}proxies:\n");
         foreach (var g in groups)
@@ -524,7 +524,7 @@ public class ClashSubService : IClashSubService
         sb.Append($"{fieldIndent}  - REJECT\n");
 
         // 自动测速组
-        sb.Append($"{itemIndent}- name: \"⚡ 自动测速\"\n");
+        sb.Append($"{itemIndent}- name: \"自动测速\"\n");
         sb.Append($"{fieldIndent}type: url-test\n");
         sb.Append($"{fieldIndent}url: http://www.gstatic.com/generate_204\n");
         sb.Append($"{fieldIndent}interval: 300\n");
@@ -549,7 +549,7 @@ public class ClashSubService : IClashSubService
         }
 
         // 故障转移组
-        sb.Append($"{itemIndent}- name: \"🔄 故障转移\"\n");
+        sb.Append($"{itemIndent}- name: \"故障转移\"\n");
         sb.Append($"{fieldIndent}type: fallback\n");
         sb.Append($"{fieldIndent}url: http://www.gstatic.com/generate_204\n");
         sb.Append($"{fieldIndent}interval: 300\n");
@@ -759,9 +759,9 @@ public class ClashSubService : IClashSubService
     {
         var result = new List<string>
         {
-            "🚀 节点选择",
-            "⚡ 自动测速",
-            "🔄 故障转移"
+            "节点选择",
+            "自动测速",
+            "故障转移"
         };
 
         var regionMap = new (string[] Keywords, string GroupName)[]
