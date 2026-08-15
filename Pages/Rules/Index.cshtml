@@ -180,14 +180,29 @@ else
                             <span asp-validation-for="InputRule.RuleType" class="text-danger small"></span>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">策略 <span class="text-danger">*</span></label>
+                            <label class="form-label fw-semibold">策略 / 代理组 <span class="text-danger">*</span></label>
                             <select class="form-select" asp-for="InputRule.Policy" id="rulePolicy" required>
                                 <option value="">-- 请选择 --</option>
-                                @foreach (var p in policies)
+                                <optgroup label="预置策略">
+                                    @foreach (var p in policies)
+                                    {
+                                        <option value="@p">@p</option>
+                                    }
+                                </optgroup>
+                                @if (Model.ProxyGroups.Count > 0)
                                 {
-                                    <option value="@p">@p</option>
+                                    <optgroup label="代理组（上游配置）">
+                                        @foreach (var g in Model.ProxyGroups)
+                                        {
+                                            <option value="@g">@g</option>
+                                        }
+                                    </optgroup>
                                 }
                             </select>
+                            @if (!string.IsNullOrEmpty(Model.GroupsError))
+                            {
+                                <div class="text-warning small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>无法加载代理组: @Model.GroupsError</div>
+                            }
                             <span asp-validation-for="InputRule.Policy" class="text-danger small"></span>
                         </div>
                         <div class="col-12">

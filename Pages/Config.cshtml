@@ -1,0 +1,208 @@
+@page
+@model ConfigModel
+@{
+    ViewData["Title"] = "配置对比";
+}
+
+<div class="mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+        <h1 class="h3 mb-0 fw-bold"><i class="bi bi-file-earmark-code text-primary me-2"></i>配置对比</h1>
+        <p class="text-muted small mt-1 mb-0">查看上游原始配置与合并后输出给 Clash 客户端的配置</p>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" id="refreshBtn" onclick="refreshConfig()">
+        <i class="bi bi-arrow-clockwise me-1"></i>强制刷新
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle me-1"></i>@Model.ErrorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (Model.LastUpdate.HasValue)
+{
+    <div class="alert alert-info py-2 small mb-3">
+        <i class="bi bi-clock-history me-1"></i>
+        最后从上游更新: <strong>@Model.LastUpdate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</strong>
+    </div>
+}
+
+<div class="row g-3 mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3 text-center">
+                <p class="text-muted small mb-1">上游行数</p>
+                <h4 class="fw-bold mb-0 text-primary">@Model.RawLineCount</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3 text-center">
+                <p class="text-muted small mb-1">合并后行数</p>
+                <h4 class="fw-bold mb-0 text-success">@Model.MergedLineCount</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3 text-center">
+                <p class="text-muted small mb-1">上游规则数</p>
+                <h4 class="fw-bold mb-0 text-info">@Model.RawRuleCount</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3 text-center">
+                <p class="text-muted small mb-1">合并后规则数</p>
+                <h4 class="fw-bold mb-0 text-warning">@Model.MergedRuleCount</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-2">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+                <h6 class="mb-0 fw-bold">
+                    <i class="bi bi-cloud-download text-primary me-1"></i>上游原始配置
+                </h6>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-secondary py-0" onclick="copyYaml('raw')">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary py-0" onclick="toggleWrap('rawYamlPre')">
+                        <i class="bi bi-text-wrap"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <pre id="rawYamlPre" class="bg-light p-3 mb-0" style="max-height: 600px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all;"><code>@Model.RawUpstreamYaml</code></pre>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+                <h6 class="mb-0 fw-bold">
+                    <i class="bi bi-file-earmark-check text-success me-1"></i>合并后配置 (Clash 客户端获取)
+                </h6>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-secondary py-0" onclick="copyYaml('merged')">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary py-0" onclick="toggleWrap('mergedYamlPre')">
+                        <i class="bi bi-text-wrap"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <pre id="mergedYamlPre" class="bg-light p-3 mb-0" style="max-height: 600px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all;"><code>@Model.MergedYaml</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.MergedRuleCount != Model.RawRuleCount)
+{
+    <div class="alert alert-warning small py-2">
+        <i class="bi bi-info-circle me-1"></i>
+        规则数变化: 上游 <strong>@Model.RawRuleCount</strong> 条 → 合并后 <strong>@Model.MergedRuleCount</strong> 条
+        （自定义规则 <strong>+@Model.CustomRuleCount</strong> 条已注入）
+    </div>
+}
+
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+    <div id="configToast" class="toast align-items-center border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body fw-bold" id="configToastBody"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    function showToast(text, isError) {
+        var toast = document.getElementById('configToast');
+        var body = document.getElementById('configToastBody');
+        toast.classList.remove('text-bg-success', 'text-bg-danger');
+        toast.classList.add(isError ? 'text-bg-danger' : 'text-bg-success');
+        body.textContent = text;
+        bootstrap.Toast.getOrCreateInstance(toast, { delay: 2000 }).show();
+    }
+
+    function fallbackCopy(text) {
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            ta.setSelectionRange(0, ta.value.length);
+            var ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (e) { return false; }
+    }
+
+    function copyYaml(type) {
+        var pre = type === 'raw' ? document.getElementById('rawYamlPre') : document.getElementById('mergedYamlPre');
+        var text = pre.querySelector('code').textContent;
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(function() {
+                showToast(type === 'raw' ? '✅ 上游配置已复制' : '✅ 合并配置已复制', false);
+            }).catch(function() {
+                if (fallbackCopy(text)) showToast('✅ 已复制', false);
+                else showToast('⚠ 复制失败,请手动选择文本复制', true);
+            });
+        } else {
+            if (fallbackCopy(text)) showToast('✅ 已复制', false);
+            else showToast('⚠ 复制失败,请手动选择文本复制', true);
+        }
+    }
+
+    function toggleWrap(id) {
+        var pre = document.getElementById(id);
+        if (pre.style.whiteSpace === 'pre-wrap') {
+            pre.style.whiteSpace = 'pre';
+            pre.style.wordBreak = 'normal';
+        } else {
+            pre.style.whiteSpace = 'pre-wrap';
+            pre.style.wordBreak = 'break-all';
+        }
+    }
+
+    function refreshConfig() {
+        var btn = document.getElementById('refreshBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>刷新中...';
+
+        fetch('?handler=Refresh', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) {
+                    showToast('✅ 刷新成功,正在重新加载...', false);
+                    setTimeout(function() { location.reload(); }, 1000);
+                } else {
+                    showToast('❌ 刷新失败: ' + (data.error || '未知错误'), true);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>强制刷新';
+                }
+            })
+            .catch(function(err) {
+                showToast('❌ 请求失败: ' + err.message, true);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>强制刷新';
+            });
+    }
+</script>
+}

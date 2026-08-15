@@ -1,0 +1,56 @@
+[
+  {
+    "id": "c9abc3a5-0991-497d-b67d-04a3db808306",
+    "ruleType": "DOMAIN",
+    "target": "fjsjjfzgud.684821.xyz",
+    "policy": "DIRECT",
+    "enabled": true,
+    "remark": null,
+    "updatedAt": "2026-08-14T16:47:18.2464645+08:00"
+  },
+  {
+    "id": "9473be36-1dd6-47e2-b1d2-c1a992cb70a3",
+    "ruleType": "DOMAIN",
+    "target": "feiniaoyun.xyz",
+    "policy": "\u98DE\u9E1F\u4E91",
+    "enabled": true,
+    "remark": null,
+    "updatedAt": "2026-08-14T16:47:18.246643+08:00"
+  },
+  {
+    "id": "5c816f5e-f193-4d08-acbb-9b91a1ed24f3",
+    "ruleType": "DOMAIN-SUFFIX",
+    "target": "feiniaoyun.xyz",
+    "policy": "\u98DE\u9E1F\u4E91",
+    "enabled": true,
+    "remark": null,
+    "updatedAt": "2026-08-14T16:47:18.2466474+08:00"
+  },
+  {
+    "id": "a5467417-ef79-4f55-8d52-dd27d1eb8bc5",
+    "ruleType": "DOMAIN-SUFFIX",
+    "target": "cn",
+    "policy": "DIRECT",
+    "enabled": true,
+    "remark": null,
+    "updatedAt": "2026-08-14T16:47:18.2466505+08:00"
+  },
+  {
+    "id": "3ceb1353-2db1-4c9d-b4b1-de2db1d59c00",
+    "ruleType": "DOMAIN-KEYWORD",
+    "target": "-cn",
+    "policy": "DIRECT",
+    "enabled": true,
+    "remark": null,
+    "updatedAt": "2026-08-14T16:47:18.2466533+08:00"
+  },
+  {
+    "id": "41718f25-714f-491e-aa0a-f91366b29f99",
+    "ruleType": "MATCH",
+    "target": "DIRECT",
+    "policy": "DIRECT",
+    "enabled": true,
+    "remark": null,
+    "updatedAt": "2026-08-14T17:51:43.6807608+08:00"
+  }
+]

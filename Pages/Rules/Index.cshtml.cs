@@ -21,6 +21,10 @@ public class IndexModel : PageModel
     [BindProperty]
     public CustomRule InputRule { get; set; } = new();
 
+    public List<string> ProxyGroups { get; set; } = new();
+
+    public string? GroupsError { get; set; }
+
     public string? EditingId { get; set; }
 
     [TempData]
@@ -31,6 +35,16 @@ public class IndexModel : PageModel
         Rules = (await _storage.GetRulesAsync())
             .OrderByDescending(r => r.UpdatedAt)
             .ToList();
+
+        try
+        {
+            ProxyGroups = await _subService.GetProxyGroupsAsync();
+        }
+        catch (Exception ex)
+        {
+            GroupsError = ex.Message;
+        }
+
         EditingId = edit;
     }
 
@@ -69,6 +83,7 @@ public class IndexModel : PageModel
         {
             Rules = (await _storage.GetRulesAsync())
                 .OrderByDescending(r => r.UpdatedAt).ToList();
+            try { ProxyGroups = await _subService.GetProxyGroupsAsync(); } catch { }
             StatusMessage = "❌ 输入有误，请检查字段";
             return Page();
         }

@@ -12,11 +12,12 @@
 </div>
 
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
+
 {
-    <div class="alert @(Model.RefreshOk == false ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+        <div class="alert @(Model.RefreshOk == false ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
         @Model.StatusMessage
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
 }
 
 <div class="row g-3 mb-4">
@@ -84,6 +85,15 @@
 
 <div class="row g-4">
     <div class="col-lg-8">
+        <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+            <div id="copyToast" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="d-flex">
+                    <div class="toast-body fw-bold" id="copyToastBody"></div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom">
                 <h5 class="mb-0 fw-bold"><i class="bi bi-link-45deg text-primary me-2"></i>我的订阅地址</h5>
@@ -103,16 +113,19 @@
                         </button>
                     </div>
                     @if (string.IsNullOrWhiteSpace(Model.Settings.AccessToken))
+
                     {
-                        <div class="form-text text-warning mt-2">
-                            <i class="bi bi-exclamation-triangle me-1"></i>访问 Token 未设置，任何人均可访问此订阅地址，建议立即前往设置页面配置。
-                        </div>
+                            <div class="form-text text-warning mt-2">
+                                <i class="bi bi-exclamation-triangle me-1"></i>访问 Token 未设置，任何人均可访问此订阅地址，建议立即前往设置页面配置。
+                            </div>
                     }
+
                     else
+
                     {
-                        <div class="form-text text-muted mt-2">
-                            <i class="bi bi-shield-check text-success me-1"></i>Token 校验已启用。Clash 客户端也可以使用 HTTP Header: <code>Authorization: Bearer @Model.Settings.AccessToken</code>
-                        </div>
+                            <div class="form-text text-muted mt-2">
+                                <i class="bi bi-shield-check text-success me-1"></i>Token 校验已启用。Clash 客户端也可以使用 HTTP Header: <code>Authorization: Bearer @Model.Settings.AccessToken</code>
+                            </div>
                     }
                 </div>
                 <div class="alert alert-light border small mb-0">
@@ -131,100 +144,105 @@
         </div>
 
         @if (!string.IsNullOrEmpty(Model.NodesError))
+
         {
-            <div class="card border-0 shadow-sm mt-4">
-                <div class="card-body text-center py-4">
-                    <div class="mb-2 text-warning"><i class="bi bi-exclamation-triangle fs-2"></i></div>
-                    <p class="text-muted mb-1">无法加载节点信息</p>
-                    <p class="text-danger small">@Model.NodesError</p>
-                    <p class="text-muted small">请检查上游订阅 URL 是否已正确配置。</p>
+                <div class="card border-0 shadow-sm mt-4">
+                    <div class="card-body text-center py-4">
+                        <div class="mb-2 text-warning"><i class="bi bi-exclamation-triangle fs-2"></i></div>
+                        <p class="text-muted mb-1">无法加载节点信息</p>
+                        <p class="text-danger small">@Model.NodesError</p>
+                        <p class="text-muted small">请检查上游订阅 URL 是否已正确配置。</p>
+                    </div>
                 </div>
-            </div>
         }
+
         else if (Model.Nodes.Count > 0)
+
         {
-            <div class="card border-0 shadow-sm mt-4">
-                <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom flex-wrap gap-2">
-                    <h5 class="mb-0 fw-bold">
-                        <i class="bi bi-diagram-3 text-info me-2"></i>代理节点
-                        <span class="badge text-bg-info ms-1">@Model.Nodes.Count</span>
-                    </h5>
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <select class="form-select form-select-sm" id="nodeSortSelect" onchange="sortNodes(this.value)" style="width:auto;">
-                            <option value="default">默认顺序</option>
-                            <option value="name-asc">名称 A-Z</option>
-                            <option value="name-desc">名称 Z-A</option>
-                            <option value="type">类型</option>
-                            <option value="latency-asc">延时 低→高</option>
-                            <option value="latency-desc">延时 高→低</option>
-                        </select>
-                        <button class="btn btn-sm btn-outline-success" onclick="testAllLatency()">
-                            <i class="bi bi-speedometer me-1"></i>全部测速
-                        </button>
-                        <div class="btn-group btn-group-sm" role="group">
-                            <button class="btn btn-outline-secondary active" id="viewGridBtn" onclick="setView('grid')">
-                                <i class="bi bi-grid"></i>
+                <div class="card border-0 shadow-sm mt-4">
+                    <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom flex-wrap gap-2">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="bi bi-diagram-3 text-info me-2"></i>代理节点
+                            <span class="badge text-bg-info ms-1">@Model.Nodes.Count</span>
+                        </h5>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <select class="form-select form-select-sm" id="nodeSortSelect" onchange="sortNodes(this.value)" style="width:auto;">
+                                <option value="default">默认顺序</option>
+                                <option value="name-asc">名称 A-Z</option>
+                                <option value="name-desc">名称 Z-A</option>
+                                <option value="type">类型</option>
+                                <option value="latency-asc">延时 低→高</option>
+                                <option value="latency-desc">延时 高→低</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-success" onclick="testAllLatency()">
+                                <i class="bi bi-speedometer me-1"></i>全部测速
                             </button>
-                            <button class="btn btn-outline-secondary" id="viewListBtn" onclick="setView('list')">
-                                <i class="bi bi-list-ul"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div id="nodeGrid" class="row g-2">
-                        @foreach (var node in Model.Nodes)
-                        {
-                            <div class="col-md-6 col-xl-4 node-item" data-name="@node.Name" data-type="@node.Type">
-                                <div class="card border node-card h-100">
-                                    <div class="card-body p-2 d-flex align-items-center gap-2">
-                                        <span class="badge text-bg-@node.TypeBadgeColor node-type" style="min-width:45px;">@node.Type</span>
-                                        <div class="flex-grow-1 overflow-hidden">
-                                            <div class="fw-semibold text-truncate small" title="@node.Name">@node.Name</div>
-                                            <div class="text-muted" style="font-size:0.7rem;">@node.Server:@node.Port</div>
-                                        </div>
-                                        <span class="badge text-bg-secondary node-latency" data-name="@node.Name">
-                                            <i class="bi bi-dash-circle"></i>
-                                        </span>
-                                        <button class="btn btn-sm btn-outline-primary btn-action node-test-btn" data-name="@node.Name" title="测试延时">
-                                            <i class="bi bi-lightning-charge"></i>
-                                        </button>
-                                    </div>
-                                </div>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-secondary active" id="viewGridBtn" onclick="setView('grid')">
+                                    <i class="bi bi-grid"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary" id="viewListBtn" onclick="setView('list')">
+                                    <i class="bi bi-list-ul"></i>
+                                </button>
                             </div>
-                        }
+                        </div>
                     </div>
-                    <div id="nodeList" class="d-none">
-                        <div class="table-responsive">
-                            <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width:60px;">类型</th>
-                                        <th>节点名称</th>
-                                        <th>服务器</th>
-                                        <th style="width:80px;">端口</th>
-                                        <th style="width:100px;">延时</th>
-                                        <th style="width:60px;">测试</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var node in Model.Nodes)
-                                    {
-                                        <tr data-name="@node.Name" data-type="@node.Type">
-                                            <td><span class="badge text-bg-@node.TypeBadgeColor">@node.Type</span></td>
-                                            <td class="fw-semibold small">@node.Name</td>
-                                            <td class="text-muted small font-monospace">@node.Server</td>
-                                            <td class="small">@node.Port</td>
-                                            <td><span class="badge text-bg-secondary node-latency" data-name="@node.Name"><i class="bi bi-dash-circle"></i></span></td>
-                                            <td><button class="btn btn-sm btn-outline-primary node-test-btn" data-name="@node.Name"><i class="bi bi-lightning-charge"></i></button></td>
+                    <div class="card-body">
+                        <div id="nodeGrid" class="row g-2">
+                        @foreach (var node in Model.Nodes)
+
+                        {
+                                    <div class="col-md-6 col-xl-4 node-item" data-name="@node.Name" data-type="@node.Type">
+                                        <div class="card border node-card h-100">
+                                            <div class="card-body p-2 d-flex align-items-center gap-2">
+                                                <span class="badge text-bg-@node.TypeBadgeColor node-type" style="min-width:45px;">@node.Type</span>
+                                                <div class="flex-grow-1 overflow-hidden">
+                                                    <div class="fw-semibold text-truncate small" title="@node.Name">@node.Name</div>
+                                                    <div class="text-muted" style="font-size:0.7rem;">@node.Server:@node.Port</div>
+                                                </div>
+                                                <span class="badge text-bg-secondary node-latency" data-name="@node.Name">
+                                                    <i class="bi bi-dash-circle"></i>
+                                                </span>
+                                                <button class="btn btn-sm btn-outline-primary btn-action node-test-btn" data-name="@node.Name" title="测试延时">
+                                                    <i class="bi bi-lightning-charge"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                        }
+                        </div>
+                        <div id="nodeList" class="d-none">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="width:60px;">类型</th>
+                                            <th>节点名称</th>
+                                            <th>服务器</th>
+                                            <th style="width:80px;">端口</th>
+                                            <th style="width:100px;">延时</th>
+                                            <th style="width:60px;">测试</th>
                                         </tr>
+                                    </thead>
+                                    <tbody>
+                                    @foreach (var node in Model.Nodes)
+
+                                    {
+                                                <tr data-name="@node.Name" data-type="@node.Type">
+                                                    <td><span class="badge text-bg-@node.TypeBadgeColor">@node.Type</span></td>
+                                                    <td class="fw-semibold small">@node.Name</td>
+                                                    <td class="text-muted small font-monospace">@node.Server</td>
+                                                    <td class="small">@node.Port</td>
+                                                    <td><span class="badge text-bg-secondary node-latency" data-name="@node.Name"><i class="bi bi-dash-circle"></i></span></td>
+                                                    <td><button class="btn btn-sm btn-outline-primary node-test-btn" data-name="@node.Name"><i class="bi bi-lightning-charge"></i></button></td>
+                                                </tr>
                                     }
-                                </tbody>
-                            </table>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
         }
     </div>
 
@@ -244,15 +262,18 @@
                     <label class="form-label small text-muted mb-1">最后更新时间</label>
                     <div class="d-flex align-items-center gap-2">
                         @if (Model.LastUpstreamUpdate.HasValue)
+
                         {
-                            <span class="badge text-bg-info">
-                                <i class="bi bi-clock-history me-1"></i>@Model.LastUpstreamUpdate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-                            </span>
-                            <span class="text-muted small" id="lastUpdateAgo">计算中...</span>
+                                <span class="badge text-bg-info">
+                                    <i class="bi bi-clock-history me-1"></i>@Model.LastUpstreamUpdate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                                </span>
+                                <span class="text-muted small" id="lastUpdateAgo">计算中...</span>
                         }
+
                         else
+
                         {
-                            <span class="text-muted small">尚未拉取上游数据</span>
+                                <span class="text-muted small">尚未拉取上游数据</span>
                         }
                     </div>
                 </div>
@@ -303,227 +324,293 @@
 </div>
 
 @section Scripts {
-<script>
-    async function testUpstream() {
-        var el = document.getElementById('upstreamStatus');
-        el.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary" role="status"></span> <span class="text-muted small">检测中...</span>';
-        try {
-            var resp = await fetch('?handler=TestUpstream');
-            var data = await resp.json();
-            if (data.ok) {
-                el.innerHTML = '<span class="badge text-bg-success"><i class="bi bi-check-circle me-1"></i>上游可访问</span>';
-            } else {
-                el.innerHTML = '<span class="badge text-bg-danger"><i class="bi bi-x-circle me-1"></i>上游无法访问，请检查 URL</span>';
-            }
-        } catch (e) {
-            el.innerHTML = '<span class="badge text-bg-warning">检测请求出错</span>';
-        }
-    }
-    document.addEventListener('DOMContentLoaded', testUpstream);
-
-    // 计算最后更新时间距今多久
-    function updateLastUpdateAgo() {
-        var el = document.getElementById('lastUpdateAgo');
-        if (!el) return;
-        var ts = parseFloat(el.getAttribute('data-ts'));
-        if (isNaN(ts)) return;
-        var diff = Math.floor((Date.now() - ts) / 1000);
-        var text;
-        if (diff < 60) text = diff + ' 秒前';
-        else if (diff < 3600) text = Math.floor(diff / 60) + ' 分钟前';
-        else if (diff < 86400) text = Math.floor(diff / 3600) + ' 小时前';
-        else text = Math.floor(diff / 86400) + ' 天前';
-        el.textContent = '(' + text + ')';
-    }
-    document.addEventListener('DOMContentLoaded', function() {
-        var el = document.getElementById('lastUpdateAgo');
-        if (el) {
-            var ts = '@(Model.LastUpstreamUpdate?.ToUnixTimeSeconds() * 1000)';
-            if (ts && ts !== '') el.setAttribute('data-ts', ts);
-            updateLastUpdateAgo();
-            setInterval(updateLastUpdateAgo, 1000);
-        }
-    });
-
-    // 事件委托：绑定测速按钮点击
-    document.addEventListener('DOMContentLoaded', function() {
-        document.addEventListener('click', function(e) {
-            var btn = e.target.closest('.node-test-btn');
-            if (btn) {
-                var name = btn.getAttribute('data-name');
-                if (name) testLatency(name);
-            }
-        });
-    });
-
-    function escapeHtml(s) {
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
-
-    function updateLatencyBadge(name, latency, error) {
-        var badges = document.querySelectorAll('.node-latency[data-name="' + CSS.escape(name) + '"]');
-        badges.forEach(function(badge) {
-            if (error) {
-                badge.className = 'badge text-bg-danger node-latency';
-                badge.innerHTML = '<i class="bi bi-x-circle"></i>';
-                badge.title = error;
-            } else if (latency != null) {
-                var color = latency < 100 ? 'success' : latency < 300 ? 'primary' : latency < 1000 ? 'warning' : 'danger';
-                badge.className = 'badge text-bg-' + color + ' node-latency';
-                badge.innerHTML = latency + 'ms';
-                badge.title = latency + 'ms';
-            } else {
-                badge.className = 'badge text-bg-secondary node-latency';
-                badge.innerHTML = '<i class="bi bi-dash-circle"></i>';
-            }
-        });
-    }
-
-    function setBtnLoading(name, loading) {
-        var btns = document.querySelectorAll('.node-test-btn');
-        btns.forEach(function(btn) {
-            if (btn.getAttribute('data-name') === name) {
-                btn.disabled = loading;
-                if (loading) {
-                    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    <script>
+        async function testUpstream() {
+            var el = document.getElementById('upstreamStatus');
+            el.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary" role="status"></span> <span class="text-muted small">检测中...</span>';
+            try {
+                var resp = await fetch('?handler=TestUpstream');
+                var data = await resp.json();
+                if (data.ok) {
+                    el.innerHTML = '<span class="badge text-bg-success"><i class="bi bi-check-circle me-1"></i>上游可访问</span>';
                 } else {
-                    btn.innerHTML = '<i class="bi bi-lightning-charge"></i>';
+                    el.innerHTML = '<span class="badge text-bg-danger"><i class="bi bi-x-circle me-1"></i>上游无法访问，请检查 URL</span>';
+                }
+            } catch (e) {
+                el.innerHTML = '<span class="badge text-bg-warning">检测请求出错</span>';
+            }
+        }
+        document.addEventListener('DOMContentLoaded', testUpstream);
+
+        // 计算最后更新时间距今多久
+        function updateLastUpdateAgo() {
+            var el = document.getElementById('lastUpdateAgo');
+            if (!el) return;
+            var ts = parseFloat(el.getAttribute('data-ts'));
+            if (isNaN(ts)) return;
+            var diff = Math.floor((Date.now() - ts) / 1000);
+            var text;
+            if (diff < 60) text = diff + ' 秒前';
+            else if (diff < 3600) text = Math.floor(diff / 60) + ' 分钟前';
+            else if (diff < 86400) text = Math.floor(diff / 3600) + ' 小时前';
+            else text = Math.floor(diff / 86400) + ' 天前';
+            el.textContent = '(' + text + ')';
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            var el = document.getElementById('lastUpdateAgo');
+            if (el) {
+                var ts = '@(Model.LastUpstreamUpdate?.ToUnixTimeSeconds() * 1000)';
+                if (ts && ts !== '') el.setAttribute('data-ts', ts);
+                updateLastUpdateAgo();
+                setInterval(updateLastUpdateAgo, 1000);
+            }
+        });
+
+        // 事件委托：绑定测速按钮点击
+        document.addEventListener('DOMContentLoaded', function() {
+            document.addEventListener('click', function(e) {
+                var btn = e.target.closest('.node-test-btn');
+                if (btn) {
+                    var name = btn.getAttribute('data-name');
+                    if (name) testLatency(name);
+                }
+            });
+        });
+
+        function escapeHtml(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function updateLatencyBadge(name, latency, error) {
+            var badges = document.querySelectorAll('.node-latency[data-name="' + CSS.escape(name) + '"]');
+            badges.forEach(function(badge) {
+                if (error) {
+                    badge.className = 'badge text-bg-danger node-latency';
+                    badge.innerHTML = '<i class="bi bi-x-circle"></i>';
+                    badge.title = error;
+                } else if (latency != null) {
+                    var color = latency < 100 ? 'success' : latency < 300 ? 'primary' : latency < 1000 ? 'warning' : 'danger';
+                    badge.className = 'badge text-bg-' + color + ' node-latency';
+                    badge.innerHTML = latency + 'ms';
+                    badge.title = latency + 'ms';
+                } else {
+                    badge.className = 'badge text-bg-secondary node-latency';
+                    badge.innerHTML = '<i class="bi bi-dash-circle"></i>';
+                }
+            });
+        }
+
+        function setBtnLoading(name, loading) {
+            var btns = document.querySelectorAll('.node-test-btn');
+            btns.forEach(function(btn) {
+                if (btn.getAttribute('data-name') === name) {
+                    btn.disabled = loading;
+                    if (loading) {
+                        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+                    } else {
+                        btn.innerHTML = '<i class="bi bi-lightning-charge"></i>';
+                    }
+                }
+            });
+        }
+
+        async function testLatency(name) {
+            setBtnLoading(name, true);
+            updateLatencyBadge(name, null, null);
+            document.querySelectorAll('.node-latency[data-name="' + CSS.escape(name) + '"]').forEach(function(b) {
+                b.className = 'badge text-bg-info node-latency';
+                b.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            });
+            try {
+                var resp = await fetch('?handler=TestLatency&name=' + encodeURIComponent(name));
+                var data = await resp.json();
+                if (data.ok) {
+                    updateLatencyBadge(name, data.latency, null);
+                } else {
+                    updateLatencyBadge(name, null, data.error || '测试失败');
+                }
+            } catch (e) {
+                updateLatencyBadge(name, null, e.message);
+            }
+            setBtnLoading(name, false);
+        }
+
+        var testingAll = false;
+        async function testAllLatency() {
+            if (testingAll) return;
+            testingAll = true;
+            var names = [];
+            document.querySelectorAll('.node-latency').forEach(function(el) {
+                var n = el.getAttribute('data-name');
+                if (names.indexOf(n) === -1) names.push(n);
+            });
+            var concurrency = 8;
+            var idx = 0;
+            async function worker() {
+                while (idx < names.length) {
+                    var name = names[idx++];
+                    await testLatency(name);
                 }
             }
-        });
-    }
+            var workers = [];
+            for (var i = 0; i < concurrency; i++) workers.push(worker());
+            await Promise.all(workers);
+            testingAll = false;
+        }
 
-    async function testLatency(name) {
-        setBtnLoading(name, true);
-        updateLatencyBadge(name, null, null);
-        document.querySelectorAll('.node-latency[data-name="' + CSS.escape(name) + '"]').forEach(function(b) {
-            b.className = 'badge text-bg-info node-latency';
-            b.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-        });
-        try {
-            var resp = await fetch('?handler=TestLatency&name=' + encodeURIComponent(name));
-            var data = await resp.json();
-            if (data.ok) {
-                updateLatencyBadge(name, data.latency, null);
+        function setView(view) {
+            var grid = document.getElementById('nodeGrid');
+            var list = document.getElementById('nodeList');
+            var gridBtn = document.getElementById('viewGridBtn');
+            var listBtn = document.getElementById('viewListBtn');
+            if (view === 'list') {
+                grid.classList.add('d-none');
+                list.classList.remove('d-none');
+                gridBtn.classList.remove('active');
+                listBtn.classList.add('active');
             } else {
-                updateLatencyBadge(name, null, data.error || '测试失败');
-            }
-        } catch (e) {
-            updateLatencyBadge(name, null, e.message);
-        }
-        setBtnLoading(name, false);
-    }
-
-    var testingAll = false;
-    async function testAllLatency() {
-        if (testingAll) return;
-        testingAll = true;
-        var names = [];
-        document.querySelectorAll('.node-latency').forEach(function(el) {
-            var n = el.getAttribute('data-name');
-            if (names.indexOf(n) === -1) names.push(n);
-        });
-        var concurrency = 8;
-        var idx = 0;
-        async function worker() {
-            while (idx < names.length) {
-                var name = names[idx++];
-                await testLatency(name);
+                grid.classList.remove('d-none');
+                list.classList.add('d-none');
+                gridBtn.classList.add('active');
+                listBtn.classList.remove('active');
             }
         }
-        var workers = [];
-        for (var i = 0; i < concurrency; i++) workers.push(worker());
-        await Promise.all(workers);
-        testingAll = false;
-    }
-
-    function setView(view) {
-        var grid = document.getElementById('nodeGrid');
-        var list = document.getElementById('nodeList');
-        var gridBtn = document.getElementById('viewGridBtn');
-        var listBtn = document.getElementById('viewListBtn');
-        if (view === 'list') {
-            grid.classList.add('d-none');
-            list.classList.remove('d-none');
-            gridBtn.classList.remove('active');
-            listBtn.classList.add('active');
-        } else {
-            grid.classList.remove('d-none');
-            list.classList.add('d-none');
-            gridBtn.classList.add('active');
-            listBtn.classList.remove('active');
-        }
-    }
-
-    // 保存默认顺序
-    var gridOriginalOrder = null;
-    var listOriginalOrder = null;
-
-    function getLatencyFromBadge(container) {
-        var badge = container.querySelector('.node-latency');
-        if (!badge) return null;
-        var text = badge.textContent.trim();
-        var match = text.match(/(\d+)\s*ms/);
-        return match ? parseInt(match[1]) : null;
-    }
-
-    function sortNodes(sortBy) {
-        var grid = document.getElementById('nodeGrid');
-        var listBody = document.querySelector('#nodeList tbody');
 
         // 保存默认顺序
-        if (!gridOriginalOrder) {
-            gridOriginalOrder = Array.from(grid.children);
-            listOriginalOrder = Array.from(listBody.children);
+        var gridOriginalOrder = null;
+        var listOriginalOrder = null;
+
+        function getLatencyFromBadge(container) {
+            var badge = container.querySelector('.node-latency');
+            if (!badge) return null;
+            var text = badge.textContent.trim();
+            var match = text.match(/(\d+)\s*ms/);
+            return match ? parseInt(match[1]) : null;
         }
 
-        var gridItems = Array.from(gridOriginalOrder);
-        var listItems = Array.from(listOriginalOrder);
+        function sortNodes(sortBy) {
+            var grid = document.getElementById('nodeGrid');
+            var listBody = document.querySelector('#nodeList tbody');
 
-        if (sortBy === 'default') {
-            gridOriginalOrder.forEach(function(el) { grid.appendChild(el); });
-            listOriginalOrder.forEach(function(el) { listBody.appendChild(el); });
-            return;
+            // 保存默认顺序
+            if (!gridOriginalOrder) {
+                gridOriginalOrder = Array.from(grid.children);
+                listOriginalOrder = Array.from(listBody.children);
+            }
+
+            var gridItems = Array.from(gridOriginalOrder);
+            var listItems = Array.from(listOriginalOrder);
+
+            if (sortBy === 'default') {
+                gridOriginalOrder.forEach(function(el) { grid.appendChild(el); });
+                listOriginalOrder.forEach(function(el) { listBody.appendChild(el); });
+                return;
+            }
+
+            function getSortValue(item) {
+                if (sortBy === 'name-asc' || sortBy === 'name-desc') {
+                    return item.getAttribute('data-name') || '';
+                }
+                if (sortBy === 'type') {
+                    return item.getAttribute('data-type') || '';
+                }
+                if (sortBy === 'latency-asc' || sortBy === 'latency-desc') {
+                    return getLatencyFromBadge(item);
+                }
+                return '';
+            }
+
+            function compare(a, b) {
+                var va = getSortValue(a);
+                var vb = getSortValue(b);
+
+                if (sortBy === 'latency-asc' || sortBy === 'latency-desc') {
+                    // null (未测试) 排到最后
+                    if (va == null && vb == null) return 0;
+                    if (va == null) return 1;
+                    if (vb == null) return -1;
+                    return sortBy === 'latency-asc' ? va - vb : vb - va;
+                }
+
+                if (sortBy === 'name-desc') {
+                    return vb.localeCompare(va, 'zh-CN');
+                }
+                return va.localeCompare(vb, 'zh-CN');
+            }
+
+            gridItems.sort(compare);
+            listItems.sort(compare);
+
+            gridItems.forEach(function(el) { grid.appendChild(el); });
+            listItems.forEach(function(el) { listBody.appendChild(el); });
         }
 
-        function getSortValue(item) {
-            if (sortBy === 'name-asc' || sortBy === 'name-desc') {
-                return item.getAttribute('data-name') || '';
+        function showCopyToast(text, isError) {
+            var toast = document.getElementById('copyToast');
+            var body = document.getElementById('copyToastBody');
+            if (!toast || !body) {
+                alert(text);
+                return;
             }
-            if (sortBy === 'type') {
-                return item.getAttribute('data-type') || '';
-            }
-            if (sortBy === 'latency-asc' || sortBy === 'latency-desc') {
-                return getLatencyFromBadge(item);
-            }
-            return '';
+            toast.classList.remove('text-bg-success', 'text-bg-danger');
+            toast.classList.add(isError ? 'text-bg-danger' : 'text-bg-success');
+            body.textContent = text;
+            var bsToast = bootstrap.Toast.getOrCreateInstance(toast, { delay: 2000 });
+            bsToast.show();
         }
 
-        function compare(a, b) {
-            var va = getSortValue(a);
-            var vb = getSortValue(b);
-
-            if (sortBy === 'latency-asc' || sortBy === 'latency-desc') {
-                // null (未测试) 排到最后
-                if (va == null && vb == null) return 0;
-                if (va == null) return 1;
-                if (vb == null) return -1;
-                return sortBy === 'latency-asc' ? va - vb : vb - va;
+        function fallbackCopy(text) {
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.top = '-1000px';
+                ta.style.left = '-1000px';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                ta.setSelectionRange(0, ta.value.length);
+                var ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return ok;
+            } catch (e) {
+                return false;
             }
-
-            if (sortBy === 'name-desc') {
-                return vb.localeCompare(va, 'zh-CN');
-            }
-            return va.localeCompare(vb, 'zh-CN');
         }
 
-        gridItems.sort(compare);
-        listItems.sort(compare);
+        async function copyToClipboard(text) {
+            if (!text) { showCopyToast('内容为空', true); return; }
 
-        gridItems.forEach(function(el) { grid.appendChild(el); });
-        listItems.forEach(function(el) { listBody.appendChild(el); });
-    }
-</script>
+            // 方案 1: Clipboard API (仅 HTTPS / localhost 可用)
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    showCopyToast('✅ 订阅地址已复制到剪贴板', false);
+                    return;
+                } catch (e) {
+                    // 继续走兜底
+                }
+            }
+
+            // 方案 2: execCommand('copy') 兼容 HTTP / 旧浏览器
+            if (fallbackCopy(text)) {
+                showCopyToast('✅ 订阅地址已复制到剪贴板', false);
+                return;
+            }
+
+            // 方案 3: 失败时自动全选输入框,提示用户手动 Ctrl+C
+            var input = document.getElementById('subUrlInput');
+            if (input) {
+                input.removeAttribute('readonly');
+                input.focus();
+                input.select();
+                input.setSelectionRange(0, input.value.length);
+                input.setAttribute('readonly', '');
+            }
+            showCopyToast('⚠ 自动复制不可用,请手动 Ctrl+C 复制 (当前为 HTTP 非安全上下文)', true);
+        }
+    </script>
 }
