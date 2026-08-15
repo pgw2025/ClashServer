@@ -128,6 +128,32 @@ public class IndexModel : PageModel
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostBatchPolicyAsync(string[] selectedIds, string batchPolicy)
+    {
+        if (selectedIds == null || selectedIds.Length == 0 || string.IsNullOrWhiteSpace(batchPolicy))
+        {
+            StatusMessage = "⚠ 未选择规则或策略为空";
+            return RedirectToPage();
+        }
+
+        var ids = selectedIds.Select(Guid.Parse).ToHashSet();
+        var rules = await _storage.GetRulesAsync();
+        int count = 0;
+        foreach (var rule in rules)
+        {
+            if (ids.Contains(rule.Id))
+            {
+                rule.Policy = batchPolicy;
+                rule.UpdatedAt = DateTime.Now;
+                count++;
+            }
+        }
+        await _storage.SaveRulesAsync(rules);
+        _subService.ClearCache();
+        StatusMessage = $"✅ 已批量修改 {count} 条规则的策略为「{batchPolicy}」";
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnGetJsonAsync(Guid id)
     {
         var rules = await _storage.GetRulesAsync();

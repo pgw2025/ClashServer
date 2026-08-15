@@ -28,6 +28,20 @@
     </div>
 </div>
 
+@if (Model.Rules.Count > 0)
+{
+    <div class="mb-3">
+        <div class="input-group input-group-sm">
+            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <input type="text" id="ruleSearch" class="form-control" placeholder="搜索类型、匹配内容、策略、备注..." oninput="filterRules(this.value)">
+            <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('ruleSearch').value=''; filterRules('');">
+                <i class="bi bi-x-circle"></i>
+            </button>
+        </div>
+        <div class="form-text small mt-1" id="searchHint"></div>
+    </div>
+}
+
 @if (!string.IsNullOrEmpty(Model.StatusMessage))
 {
     <div class="alert alert-info alert-dismissible fade show" role="alert">
@@ -54,12 +68,48 @@
 }
 else
 {
+    <!-- 批量操作栏 -->
+    <form id="batchForm" method="post" asp-page-handler="BatchPolicy"></form>
+    <div id="batchBar" class="card border-0 shadow-sm mb-3" style="display: none;">
+        <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap bg-dark text-white rounded">
+            <span id="batchCount" class="badge bg-light text-dark fs-6">0</span>
+            <span class="small">条已选</span>
+            <select id="batchPolicySelect" class="form-select form-select-sm" style="width: auto; max-width: 200px;" form="batchForm" name="batchPolicy">
+                <option value="">-- 选择策略 --</option>
+                <optgroup label="预置策略">
+                    @foreach (var p in CustomRule.AvailablePolicies)
+                    {
+                        <option value="@p">@p</option>
+                    }
+                </optgroup>
+                @if (Model.ProxyGroups.Count > 0)
+                {
+                    <optgroup label="代理组（上游配置）">
+                        @foreach (var g in Model.ProxyGroups)
+                        {
+                            <option value="@g">@g</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+            <button type="submit" form="batchForm" class="btn btn-sm btn-warning fw-bold" onclick="return confirmBatch()">
+                <i class="bi bi-check2-all me-1"></i>批量应用策略
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-light ms-auto" onclick="clearSelection()">
+                <i class="bi bi-x-lg me-1"></i>取消选择
+            </button>
+        </div>
+    </div>
+
     <div class="d-none d-md-block">
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 40px;">
+                                <input class="form-check-input" type="checkbox" id="selectAllDesktop" onchange="toggleSelectAll(this)">
+                            </th>
                             <th style="width: 90px;">状态</th>
                             <th>类型</th>
                             <th>匹配内容</th>
@@ -72,7 +122,11 @@ else
                     <tbody>
                         @foreach (var r in Model.Rules)
                         {
-                            <tr class="@(r.Enabled ? "" : "table-secondary opacity-75")">
+                            var searchData = $"{r.RuleType} {r.Target} {r.Policy} {r.Remark}".ToLowerInvariant();
+                            <tr class="@(r.Enabled ? "" : "table-secondary opacity-75")" data-search="@searchData">
+                                <td>
+                                    <input class="form-check-input rule-checkbox" type="checkbox" name="selectedIds" value="@r.Id" form="batchForm">
+                                </td>
                                 <td>
                                     <form method="post" asp-page-handler="Toggle" class="d-inline" onsubmit="return confirmToggle(this)">
                                         <input type="hidden" name="id" value="@r.Id">
@@ -113,12 +167,20 @@ else
     </div>
 
     <div class="d-md-none">
+        <div class="mb-2">
+            <div class="form-check d-inline-block">
+                <input class="form-check-input" type="checkbox" id="selectAllMobile" onchange="toggleSelectAll(this)">
+                <label class="form-check-label small text-muted" for="selectAllMobile">全选</label>
+            </div>
+        </div>
         @foreach (var r in Model.Rules)
         {
-            <div class="card rule-card border-0 shadow-sm">
+            var searchData = $"{r.RuleType} {r.Target} {r.Policy} {r.Remark}".ToLowerInvariant();
+            <div class="card rule-card border-0 shadow-sm" data-search="@searchData">
                 <div class="card-body p-3 @(r.Enabled ? "" : "opacity-75 bg-light")">
                     <div class="d-flex align-items-start justify-content-between mb-2">
-                        <div>
+                        <div class="d-flex align-items-center gap-2">
+                            <input class="form-check-input rule-checkbox" type="checkbox" name="selectedIds" value="@r.Id" form="batchForm">
                             <span class="badge @(r.Enabled ? "bg-primary" : "bg-secondary") me-1">@r.RuleType</span>
                             <span class="badge @(r.Policy == "REJECT" ? "bg-danger" : r.Policy == "DIRECT" ? "bg-success" : "bg-info text-dark")">@r.Policy</span>
                         </div>
@@ -257,6 +319,97 @@ else
     function confirmToggle(form) {
         return true;
     }
+
+    function filterRules(keyword) {
+        var kw = (keyword || '').trim().toLowerCase();
+        var items = document.querySelectorAll('[data-search]');
+        var visible = 0;
+        var total = items.length;
+        items.forEach(function(el) {
+            var data = el.getAttribute('data-search') || '';
+            if (!kw || data.indexOf(kw) >= 0) {
+                el.style.display = '';
+                visible++;
+            } else {
+                el.style.display = 'none';
+            }
+        });
+        var hint = document.getElementById('searchHint');
+        if (hint) {
+            if (!kw) {
+                hint.textContent = '';
+            } else {
+                hint.textContent = '找到 ' + visible + ' / ' + total + ' 条匹配';
+            }
+        }
+    }
+
+    function updateBatchBar() {
+        var checked = document.querySelectorAll('.rule-checkbox:checked');
+        var bar = document.getElementById('batchBar');
+        var count = document.getElementById('batchCount');
+        if (checked.length > 0) {
+            bar.style.display = 'flex';
+            count.textContent = checked.length;
+        } else {
+            bar.style.display = 'none';
+        }
+        // 同步全选状态
+        var allDesktop = document.getElementById('selectAllDesktop');
+        var allMobile = document.getElementById('selectAllMobile');
+        var all = document.querySelectorAll('.rule-checkbox');
+        var checkedAll = checked.length === all.length;
+        if (allDesktop) allDesktop.checked = checkedAll;
+        if (allMobile) allMobile.checked = checkedAll;
+    }
+
+    function toggleSelectAll(src) {
+        document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
+            cb.checked = src.checked;
+        });
+        updateBatchBar();
+    }
+
+    function clearSelection() {
+        document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
+            cb.checked = false;
+        });
+        var allDesktop = document.getElementById('selectAllDesktop');
+        var allMobile = document.getElementById('selectAllMobile');
+        if (allDesktop) allDesktop.checked = false;
+        if (allMobile) allMobile.checked = false;
+        updateBatchBar();
+    }
+
+    function confirmBatch() {
+        var checked = document.querySelectorAll('.rule-checkbox:checked');
+        var policy = document.getElementById('batchPolicySelect').value;
+        if (checked.length === 0) {
+            alert('请先选择规则');
+            return false;
+        }
+        if (!policy) {
+            alert('请选择要应用的策略');
+            return false;
+        }
+        // 将选中的 id 动态填入表单
+        var form = document.getElementById('batchForm');
+        form.querySelectorAll('input[name="selectedIds"]').forEach(function(el) { el.remove(); });
+        checked.forEach(function(cb) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'selectedIds';
+            input.value = cb.value;
+            form.appendChild(input);
+        });
+        return true;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.rule-checkbox').forEach(function(cb) {
+            cb.addEventListener('change', updateBatchBar);
+        });
+    });
 
     function openCreateModal() {
         document.getElementById('modalTitle').textContent = '新增规则';
