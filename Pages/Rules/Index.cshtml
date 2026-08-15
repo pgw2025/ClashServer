@@ -84,7 +84,7 @@ else
                 </optgroup>
                 @if (Model.ProxyGroups.Count > 0)
                 {
-                    <optgroup label="代理组（上游配置）">
+                    <optgroup label="@(Model.AutoGroupNodes ? "策略组（自动生成）" : "代理组（上游配置）")">
                         @foreach (var g in Model.ProxyGroups)
                         {
                             <option value="@g">@g</option>

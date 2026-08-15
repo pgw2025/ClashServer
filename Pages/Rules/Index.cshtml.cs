@@ -23,6 +23,8 @@ public class IndexModel : PageModel
 
     public List<string> ProxyGroups { get; set; } = new();
 
+    public bool AutoGroupNodes { get; set; }
+
     public string? GroupsError { get; set; }
 
     public string? EditingId { get; set; }
@@ -35,6 +37,9 @@ public class IndexModel : PageModel
         Rules = (await _storage.GetRulesAsync())
             .OrderByDescending(r => r.UpdatedAt)
             .ToList();
+
+        var settings = await _storage.GetSettingsAsync();
+        AutoGroupNodes = settings.AutoGroupNodes;
 
         try
         {
