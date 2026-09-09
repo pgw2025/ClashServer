@@ -23,8 +23,9 @@ public class IndexModel : PageModel
     public int EnabledRuleCount { get; set; }
     public bool? UpstreamOk { get; set; }
     public bool? RefreshOk { get; set; }
-    public string? NodesError { get; set; }
     public DateTimeOffset? LastUpstreamUpdate { get; set; }
+    public DateTimeOffset? LastGoodUpdate { get; set; }
+    public bool ShowStaleBanner { get; set; }
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -36,21 +37,17 @@ public class IndexModel : PageModel
         EnabledRuleCount = Rules.Count(r => r.Enabled);
         BuildSubUrl();
 
-        try
-        {
-            var baseUrl = $"{Request.Scheme}://{Request.Host}";
-            Nodes = await _subService.GetProxyNodesAsync(baseUrl);
-            LastUpstreamUpdate = _subService.GetLastUpstreamUpdate();
-        }
-        catch (Exception ex)
-        {
-            NodesError = ex.Message;
-        }
+        // 懒加载：服务端只读缓存，未命中时由前端 JS 异步拉取 /api/nodes，页面永不因抓取阻塞
+        Nodes = _subService.GetCachedNodes() ?? new();
+        LastUpstreamUpdate = _subService.GetLastUpstreamUpdate();
+        LastGoodUpdate = _subService.GetLastGoodUpdate();
+
+        ShowStaleBanner = IsDataStale();
     }
 
     public async Task<IActionResult> OnGetTestUpstreamAsync()
     {
-        var ok = await _subService.TestUpstreamAsync();
+        var ok = await _subService.TestUpstreamAsync(Request.HttpContext.RequestAborted);
         return new JsonResult(new { ok });
     }
 
@@ -59,7 +56,7 @@ public class IndexModel : PageModel
         try
         {
             var baseUrl = $"{Request.Scheme}://{Request.Host}";
-            var nodes = await _subService.GetProxyNodesAsync(baseUrl);
+            var nodes = await _subService.GetProxyNodesAsync(baseUrl, ct: Request.HttpContext.RequestAborted, fetchTimeout: AdminTimeout);
             var node = nodes.FirstOrDefault(n => n.Name == name);
             if (node == null)
                 return new JsonResult(new { ok = false, error = "未找到该节点" });
@@ -89,8 +86,8 @@ public class IndexModel : PageModel
             BuildSubUrl();
 
             var baseUrl = $"{Request.Scheme}://{Request.Host}";
-            await _subService.GetMergedSubAsync(baseUrl, forceRefresh: true);
-            Nodes = await _subService.GetProxyNodesAsync(baseUrl, forceRefresh: true);
+            await _subService.GetMergedSubAsync(baseUrl, forceRefresh: true, ct: Request.HttpContext.RequestAborted, fetchTimeout: PublicTimeout);
+            Nodes = await _subService.GetProxyNodesAsync(baseUrl, forceRefresh: true, ct: Request.HttpContext.RequestAborted, fetchTimeout: PublicTimeout);
             RefreshOk = true;
             StatusMessage = "✅ 缓存已刷新，最新的订阅内容已重新拉取并合并。";
         }
@@ -111,5 +108,16 @@ public class IndexModel : PageModel
             url += $"?token={Uri.EscapeDataString(Settings.AccessToken)}";
         }
         SubUrl = url;
+    }
+
+    private TimeSpan AdminTimeout => TimeSpan.FromSeconds(Settings.AdminFetchTimeoutSeconds > 0 ? Settings.AdminFetchTimeoutSeconds : 5);
+
+    private TimeSpan PublicTimeout => TimeSpan.FromSeconds(Settings.PublicSubFetchTimeoutSeconds > 0 ? Settings.PublicSubFetchTimeoutSeconds : 10);
+
+    private bool IsDataStale()
+    {
+        var lastOk = LastUpstreamUpdate ?? LastGoodUpdate;
+        var staleMinutes = Settings.CacheMinutes > 0 ? Settings.CacheMinutes : 15;
+        return !lastOk.HasValue || lastOk.Value < DateTimeOffset.Now.AddMinutes(-2 * staleMinutes);
     }
 }

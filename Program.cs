@@ -44,14 +44,21 @@ app.MapGet("/sub", async (HttpContext context, IClashSubService subService, ISto
 
         var force = context.Request.Query["refresh"].FirstOrDefault() == "1";
         var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
-        var yaml = await subService.GetMergedSubAsync(baseUrl, force, context.RequestAborted);
+        var subTimeout = TimeSpan.FromSeconds(settings.PublicSubFetchTimeoutSeconds > 0 ? settings.PublicSubFetchTimeoutSeconds : 10);
+        var result = await subService.GetMergedSubSafeAsync(baseUrl, force, context.RequestAborted, subTimeout);
+
+        if (result.Degraded)
+        {
+            logger.LogWarning("/sub 上游不可达，返回 last-good 降级数据（数据时间: {At}）", result.DataAt);
+            context.Response.Headers["X-Cache"] = "stale";
+        }
 
         context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.ContentType = "text/html; charset=UTF-8";
         // context.Response.ContentType = "application/x-yaml; charset=utf-8";
         // context.Response.Headers["Content-Disposition"] = "attachment; filename=\"config.yaml\"";
         // context.Response.Headers["Cache-Control"] = "public, max-age=900";
-        var yamlBytes = Encoding.UTF8.GetBytes(yaml);
+        var yamlBytes = Encoding.UTF8.GetBytes(result.Yaml);
         await context.Response.Body.WriteAsync(yamlBytes);
     }
     catch (Exception ex)
@@ -69,6 +76,43 @@ app.MapGet("/api/sub-health", async (IClashSubService subService, HttpContext co
     context.Response.StatusCode = ok ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable;
     context.Response.ContentType = "application/json; charset=utf-8";
     await context.Response.WriteAsJsonAsync(new { ok, timestamp = DateTimeOffset.Now });
+});
+
+app.MapGet("/api/nodes", async (IClashSubService subService, IStorageService storage, HttpContext context, ILogger<Program> logger) =>
+{
+    try
+    {
+        var settings = await storage.GetSettingsAsync();
+        var timeout = TimeSpan.FromSeconds(settings.AdminFetchTimeoutSeconds > 0 ? settings.AdminFetchTimeoutSeconds : 5);
+        var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+        var nodes = await subService.GetProxyNodesAsync(baseUrl, false, context.RequestAborted, timeout);
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsJsonAsync(new { ok = true, nodes });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "/api/nodes 拉取节点失败");
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsJsonAsync(new { ok = false, error = ex.Message });
+    }
+});
+
+app.MapGet("/api/groups", async (IClashSubService subService, IStorageService storage, HttpContext context, ILogger<Program> logger) =>
+{
+    try
+    {
+        var settings = await storage.GetSettingsAsync();
+        var timeout = TimeSpan.FromSeconds(settings.AdminFetchTimeoutSeconds > 0 ? settings.AdminFetchTimeoutSeconds : 5);
+        var groups = await subService.GetProxyGroupsAsync(false, context.RequestAborted, timeout);
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsJsonAsync(new { ok = true, groups });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "/api/groups 拉取策略组失败");
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsJsonAsync(new { ok = false, error = ex.Message });
+    }
 });
 
 app.MapRazorPages();

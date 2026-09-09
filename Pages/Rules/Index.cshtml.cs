@@ -25,9 +25,13 @@ public class IndexModel : PageModel
 
     public bool AutoGroupNodes { get; set; }
 
-    public string? GroupsError { get; set; }
+    public DateTimeOffset? LastGoodUpdate { get; set; }
+
+    public bool ShowStaleBanner { get; set; }
 
     public string? EditingId { get; set; }
+
+    private int _cacheMinutes = 15;
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -38,15 +42,13 @@ public class IndexModel : PageModel
 
         var settings = await _storage.GetSettingsAsync();
         AutoGroupNodes = settings.AutoGroupNodes;
+        _cacheMinutes = settings.CacheMinutes > 0 ? settings.CacheMinutes : 15;
 
-        try
-        {
-            ProxyGroups = await _subService.GetProxyGroupsAsync();
-        }
-        catch (Exception ex)
-        {
-            GroupsError = ex.Message;
-        }
+        // 懒加载：只读缓存，未命中时由前端 JS 异步拉取 /api/groups
+        ProxyGroups = _subService.GetCachedGroups() ?? new();
+        LastGoodUpdate = _subService.GetLastGoodUpdate();
+
+        ShowStaleBanner = IsDataStale();
 
         EditingId = edit;
     }
@@ -85,7 +87,7 @@ public class IndexModel : PageModel
         if (!ModelState.IsValid)
         {
             Rules = (await _storage.GetRulesAsync()).ToList();
-            try { ProxyGroups = await _subService.GetProxyGroupsAsync(); } catch { }
+            ProxyGroups = _subService.GetCachedGroups() ?? new();
             StatusMessage = "❌ 输入有误，请检查字段";
             return Page();
         }
@@ -179,6 +181,12 @@ public class IndexModel : PageModel
         var rule = rules.FirstOrDefault(r => r.Id == id);
         if (rule == null) return NotFound();
         return new JsonResult(rule);
+    }
+
+    private bool IsDataStale()
+    {
+        var lastOk = LastGoodUpdate;
+        return !lastOk.HasValue || lastOk.Value < DateTimeOffset.Now.AddMinutes(-2 * _cacheMinutes);
     }
 
     public async Task<IActionResult> OnPostMoveUpAsync(Guid id)

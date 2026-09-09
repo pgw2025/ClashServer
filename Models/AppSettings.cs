@@ -20,6 +20,16 @@ public class AppSettings
     [Range(1, 1440, ErrorMessage = "缓存时长应为 1-1440 分钟")]
     public int CacheMinutes { get; set; } = 15;
 
+    [JsonPropertyName("adminFetchTimeoutSeconds")]
+    [Display(Name = "管理页面抓取超时 (秒)")]
+    [Range(1, 60, ErrorMessage = "超时时间应为 1-60 秒")]
+    public int AdminFetchTimeoutSeconds { get; set; } = 5;
+
+    [JsonPropertyName("publicSubFetchTimeoutSeconds")]
+    [Display(Name = "订阅端点抓取超时 (秒)")]
+    [Range(1, 60, ErrorMessage = "超时时间应为 1-60 秒")]
+    public int PublicSubFetchTimeoutSeconds { get; set; } = 10;
+
     [JsonPropertyName("insertRulesBefore")]
     [Display(Name = "自定义规则插入位置")]
     public bool InsertRulesBefore { get; set; } = true;

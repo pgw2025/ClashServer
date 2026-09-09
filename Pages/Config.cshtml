@@ -22,6 +22,23 @@
     </div>
 }
 
+@if (Model.ShowStaleBanner)
+{
+    <div class="alert alert-warning py-2 small mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        订阅数据不可用：当前展示
+        @if (Model.LastGoodUpdate.HasValue)
+        {
+            <text><strong>@Model.LastGoodUpdate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</strong> 前的缓存数据，</text>
+        }
+        else
+        {
+            <text>本地规则数据（从未成功拉取过上游订阅），</text>
+        }
+        上游恢复后将自动更新。
+    </div>
+}
+
 @if (Model.LastUpdate.HasValue)
 {
     <div class="alert alert-info py-2 small mb-3">

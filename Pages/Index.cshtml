@@ -20,6 +20,23 @@
         </div>
 }
 
+@if (Model.ShowStaleBanner)
+{
+    <div class="alert alert-warning py-2 small mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        订阅数据不可用：当前展示
+        @if (Model.LastGoodUpdate.HasValue)
+        {
+            <text><strong>@Model.LastGoodUpdate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</strong> 前的缓存数据，</text>
+        }
+        else
+        {
+            <text>本地规则数据（从未成功拉取过上游订阅），</text>
+        }
+        上游恢复后将自动更新。
+    </div>
+}
+
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-lg-3">
         <div class="card card-hover border-0 shadow-sm">
@@ -57,7 +74,7 @@
                 <div class="d-flex align-items-center justify-content-between">
                     <div>
                         <p class="text-muted small mb-1">代理节点</p>
-                        <h3 class="fw-bold mb-0 text-info">@Model.Nodes.Count</h3>
+                        <h3 class="fw-bold mb-0 text-info" id="nodeStatCount">@Model.Nodes.Count</h3>
                     </div>
                     <div class="bg-info bg-opacity-10 rounded-3 p-3">
                         <i class="bi bi-diagram-3 text-info fs-3"></i>
@@ -143,107 +160,100 @@
             </div>
         </div>
 
-        @if (!string.IsNullOrEmpty(Model.NodesError))
-
-        {
-                <div class="card border-0 shadow-sm mt-4">
-                    <div class="card-body text-center py-4">
-                        <div class="mb-2 text-warning"><i class="bi bi-exclamation-triangle fs-2"></i></div>
-                        <p class="text-muted mb-1">无法加载节点信息</p>
-                        <p class="text-danger small">@Model.NodesError</p>
-                        <p class="text-muted small">请检查上游订阅 URL 是否已正确配置。</p>
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom flex-wrap gap-2">
+                <h5 class="mb-0 fw-bold">
+                    <i class="bi bi-diagram-3 text-info me-2"></i>代理节点
+                    <span class="badge text-bg-info ms-1" id="nodeCountBadge">@Model.Nodes.Count</span>
+                </h5>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <select class="form-select form-select-sm" id="nodeSortSelect" onchange="sortNodes(this.value)" style="width:auto;">
+                        <option value="default">默认顺序</option>
+                        <option value="name-asc">名称 A-Z</option>
+                        <option value="name-desc">名称 Z-A</option>
+                        <option value="type">类型</option>
+                        <option value="latency-asc">延时 低→高</option>
+                        <option value="latency-desc">延时 高→低</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline-success" onclick="testAllLatency()">
+                        <i class="bi bi-speedometer me-1"></i>全部测速
+                    </button>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button class="btn btn-outline-secondary active" id="viewGridBtn" onclick="setView('grid')">
+                            <i class="bi bi-grid"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary" id="viewListBtn" onclick="setView('list')">
+                            <i class="bi bi-list-ul"></i>
+                        </button>
                     </div>
                 </div>
-        }
+            </div>
+            <div class="card-body">
+                <div id="nodeGrid" class="row g-2">
+                @foreach (var node in Model.Nodes)
 
-        else if (Model.Nodes.Count > 0)
-
-        {
-                <div class="card border-0 shadow-sm mt-4">
-                    <div class="card-header bg-white d-flex align-items-center justify-content-between border-bottom flex-wrap gap-2">
-                        <h5 class="mb-0 fw-bold">
-                            <i class="bi bi-diagram-3 text-info me-2"></i>代理节点
-                            <span class="badge text-bg-info ms-1">@Model.Nodes.Count</span>
-                        </h5>
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <select class="form-select form-select-sm" id="nodeSortSelect" onchange="sortNodes(this.value)" style="width:auto;">
-                                <option value="default">默认顺序</option>
-                                <option value="name-asc">名称 A-Z</option>
-                                <option value="name-desc">名称 Z-A</option>
-                                <option value="type">类型</option>
-                                <option value="latency-asc">延时 低→高</option>
-                                <option value="latency-desc">延时 高→低</option>
-                            </select>
-                            <button class="btn btn-sm btn-outline-success" onclick="testAllLatency()">
-                                <i class="bi bi-speedometer me-1"></i>全部测速
-                            </button>
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button class="btn btn-outline-secondary active" id="viewGridBtn" onclick="setView('grid')">
-                                    <i class="bi bi-grid"></i>
-                                </button>
-                                <button class="btn btn-outline-secondary" id="viewListBtn" onclick="setView('list')">
-                                    <i class="bi bi-list-ul"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div id="nodeGrid" class="row g-2">
-                        @foreach (var node in Model.Nodes)
-
-                        {
-                                    <div class="col-md-6 col-xl-4 node-item" data-name="@node.Name" data-type="@node.Type">
-                                        <div class="card border node-card h-100">
-                                            <div class="card-body p-2 d-flex align-items-center gap-2">
-                                                <span class="badge text-bg-@node.TypeBadgeColor node-type" style="min-width:45px;">@node.Type</span>
-                                                <div class="flex-grow-1 overflow-hidden">
-                                                    <div class="fw-semibold text-truncate small" title="@node.Name">@node.Name</div>
-                                                    <div class="text-muted" style="font-size:0.7rem;">@node.Server:@node.Port</div>
-                                                </div>
-                                                <span class="badge text-bg-secondary node-latency" data-name="@node.Name">
-                                                    <i class="bi bi-dash-circle"></i>
-                                                </span>
-                                                <button class="btn btn-sm btn-outline-primary btn-action node-test-btn" data-name="@node.Name" title="测试延时">
-                                                    <i class="bi bi-lightning-charge"></i>
-                                                </button>
-                                            </div>
+                {
+                            <div class="col-md-6 col-xl-4 node-item" data-name="@node.Name" data-type="@node.Type">
+                                <div class="card border node-card h-100">
+                                    <div class="card-body p-2 d-flex align-items-center gap-2">
+                                        <span class="badge text-bg-@node.TypeBadgeColor node-type" style="min-width:45px;">@node.Type</span>
+                                        <div class="flex-grow-1 overflow-hidden">
+                                            <div class="fw-semibold text-truncate small" title="@node.Name">@node.Name</div>
+                                            <div class="text-muted" style="font-size:0.7rem;">@node.Server:@node.Port</div>
                                         </div>
+                                        <span class="badge text-bg-secondary node-latency" data-name="@node.Name">
+                                            <i class="bi bi-dash-circle"></i>
+                                        </span>
+                                        <button class="btn btn-sm btn-outline-primary btn-action node-test-btn" data-name="@node.Name" title="测试延时">
+                                            <i class="bi bi-lightning-charge"></i>
+                                        </button>
                                     </div>
-                        }
-                        </div>
-                        <div id="nodeList" class="d-none">
-                            <div class="table-responsive">
-                                <table class="table table-sm table-hover align-middle mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th style="width:60px;">类型</th>
-                                            <th>节点名称</th>
-                                            <th>服务器</th>
-                                            <th style="width:80px;">端口</th>
-                                            <th style="width:100px;">延时</th>
-                                            <th style="width:60px;">测试</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                    @foreach (var node in Model.Nodes)
-
-                                    {
-                                                <tr data-name="@node.Name" data-type="@node.Type">
-                                                    <td><span class="badge text-bg-@node.TypeBadgeColor">@node.Type</span></td>
-                                                    <td class="fw-semibold small">@node.Name</td>
-                                                    <td class="text-muted small font-monospace">@node.Server</td>
-                                                    <td class="small">@node.Port</td>
-                                                    <td><span class="badge text-bg-secondary node-latency" data-name="@node.Name"><i class="bi bi-dash-circle"></i></span></td>
-                                                    <td><button class="btn btn-sm btn-outline-primary node-test-btn" data-name="@node.Name"><i class="bi bi-lightning-charge"></i></button></td>
-                                                </tr>
-                                    }
-                                    </tbody>
-                                </table>
+                                </div>
                             </div>
-                        </div>
+                }
+                </div>
+                <div id="nodeList" class="d-none">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:60px;">类型</th>
+                                    <th>节点名称</th>
+                                    <th>服务器</th>
+                                    <th style="width:80px;">端口</th>
+                                    <th style="width:100px;">延时</th>
+                                    <th style="width:60px;">测试</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var node in Model.Nodes)
+
+                            {
+                                        <tr data-name="@node.Name" data-type="@node.Type">
+                                            <td><span class="badge text-bg-@node.TypeBadgeColor">@node.Type</span></td>
+                                            <td class="fw-semibold small">@node.Name</td>
+                                            <td class="text-muted small font-monospace">@node.Server</td>
+                                            <td class="small">@node.Port</td>
+                                            <td><span class="badge text-bg-secondary node-latency" data-name="@node.Name"><i class="bi bi-dash-circle"></i></span></td>
+                                            <td><button class="btn btn-sm btn-outline-primary node-test-btn" data-name="@node.Name"><i class="bi bi-lightning-charge"></i></button></td>
+                                        </tr>
+                            }
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-        }
+                <div id="nodesLoading" class="text-center py-4 d-none">
+                    <div class="spinner-border spinner-border-sm text-info mb-2" role="status"></div>
+                    <p class="text-muted small mb-0">正在加载节点信息...</p>
+                </div>
+                <div id="nodesError" class="text-center py-4 d-none">
+                    <div class="mb-2 text-warning"><i class="bi bi-exclamation-triangle fs-2"></i></div>
+                    <p class="text-muted mb-1">无法加载节点信息</p>
+                    <p class="text-danger small mb-0" id="nodesErrorMessage"></p>
+                    <p class="text-muted small mb-0 mt-1">请检查上游订阅 URL 是否已正确配置。</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="col-lg-4">
@@ -611,6 +621,84 @@
                 input.setAttribute('readonly', '');
             }
             showCopyToast('⚠ 自动复制不可用,请手动 Ctrl+C 复制 (当前为 HTTP 非安全上下文)', true);
+        }
+
+        // 懒加载：服务端未命中缓存时异步拉取 /api/nodes，页面渲染不阻塞
+        document.addEventListener('DOMContentLoaded', function () {
+            if (document.querySelectorAll('.node-item').length > 0) return;
+            loadNodesLazy();
+        });
+
+        async function loadNodesLazy() {
+            var loading = document.getElementById('nodesLoading');
+            var errorBox = document.getElementById('nodesError');
+            if (loading) loading.classList.remove('d-none');
+            try {
+                var resp = await fetch('/api/nodes');
+                var data = await resp.json();
+                if (!data.ok || !data.nodes || data.nodes.length === 0) {
+                    throw new Error(data.error || '没有可用节点数据');
+                }
+                renderNodes(data.nodes);
+            } catch (e) {
+                if (errorBox) {
+                    errorBox.classList.remove('d-none');
+                    var em = document.getElementById('nodesErrorMessage');
+                    if (em) em.textContent = e.message || '请检查上游订阅 URL 是否已正确配置。';
+                }
+            } finally {
+                if (loading) loading.classList.add('d-none');
+            }
+        }
+
+        function renderNodes(nodes) {
+            var grid = document.getElementById('nodeGrid');
+            var listBody = document.querySelector('#nodeList tbody');
+            if (!grid || !listBody) return;
+            grid.innerHTML = '';
+            listBody.innerHTML = '';
+            nodes.forEach(function (node) {
+                var type = node.type || node.Type || '';
+                var badgeClass = node.typeBadgeColor || node.TypeBadgeColor || 'secondary';
+                var name = node.name || node.Name || '';
+                var server = node.server || node.Server || '';
+                var port = node.port || node.Port || '';
+
+                var col = document.createElement('div');
+                col.className = 'col-md-6 col-xl-4 node-item';
+                col.setAttribute('data-name', name);
+                col.setAttribute('data-type', type);
+                col.innerHTML =
+                    '<div class="card border node-card h-100">' +
+                    '<div class="card-body p-2 d-flex align-items-center gap-2">' +
+                    '<span class="badge text-bg-' + badgeClass + ' node-type" style="min-width:45px;">' + escapeHtml(type) + '</span>' +
+                    '<div class="flex-grow-1 overflow-hidden">' +
+                    '<div class="fw-semibold text-truncate small" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</div>' +
+                    '<div class="text-muted" style="font-size:0.7rem;">' + escapeHtml(server) + ':' + escapeHtml(String(port)) + '</div>' +
+                    '</div>' +
+                    '<span class="badge text-bg-secondary node-latency" data-name="' + escapeHtml(name) + '"><i class="bi bi-dash-circle"></i></span>' +
+                    '<button class="btn btn-sm btn-outline-primary btn-action node-test-btn" data-name="' + escapeHtml(name) + '" title="测试延时"><i class="bi bi-lightning-charge"></i></button>' +
+                    '</div></div>';
+                grid.appendChild(col);
+
+                var tr = document.createElement('tr');
+                tr.setAttribute('data-name', name);
+                tr.setAttribute('data-type', type);
+                tr.innerHTML =
+                    '<td><span class="badge text-bg-' + badgeClass + '">' + escapeHtml(type) + '</span></td>' +
+                    '<td class="fw-semibold small">' + escapeHtml(name) + '</td>' +
+                    '<td class="text-muted small font-monospace">' + escapeHtml(server) + '</td>' +
+                    '<td class="small">' + escapeHtml(String(port)) + '</td>' +
+                    '<td><span class="badge text-bg-secondary node-latency" data-name="' + escapeHtml(name) + '"><i class="bi bi-dash-circle"></i></span></td>' +
+                    '<td><button class="btn btn-sm btn-outline-primary node-test-btn" data-name="' + escapeHtml(name) + '"><i class="bi bi-lightning-charge"></i></button></td>';
+                listBody.appendChild(tr);
+            });
+            var badge = document.getElementById('nodeCountBadge');
+            if (badge) badge.textContent = nodes.length;
+            var stat = document.getElementById('nodeStatCount');
+            if (stat) stat.textContent = nodes.length;
+            gridOriginalOrder = null;
+            listOriginalOrder = null;
         }
     </script>
 }

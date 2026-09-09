@@ -8,6 +8,7 @@ public class BackgroundRefreshService : BackgroundService
     private readonly IClashSubService _subService;
     private readonly IStorageService _storage;
     private readonly ILogger<BackgroundRefreshService> _logger;
+    private int _consecutiveFailures;
 
     public BackgroundRefreshService(
         IClashSubService subService,
@@ -78,27 +79,43 @@ public class BackgroundRefreshService : BackgroundService
             finally
             {
                 sw.Stop();
+                if (hasUpstream)
+                {
+                    // 退避计数：整个周期失败（订阅或节点任一失败）则累计，成功清零
+                    _consecutiveFailures = (subOk && nodesOk) ? 0 : _consecutiveFailures + 1;
+                }
             }
 
             if (hasUpstream)
             {
                 var totalMs = sw.ElapsedMilliseconds;
                 var status = (subOk && nodesOk) ? "成功" : "失败";
-                _logger.LogInformation("【刷新结束】状态: {Status} | 总耗时: {TotalMs}ms | 订阅:{SubOk} 节点:{NodesOk} | 规则:{RuleCount} 节点:{NodeCount} | 下次刷新: {Interval} 分钟后",
+                _logger.LogInformation("【刷新结束】状态: {Status} | 总耗时: {TotalMs}ms | 订阅:{SubOk} 节点:{NodesOk} | 规则:{RuleCount} 节点:{NodeCount} | 连续失败:{Failures} 次 | 下次刷新: {Interval} 分钟后",
                     status,
                     totalMs,
                     subOk ? "✅" : "❌",
                     nodesOk ? "✅" : "❌",
                     ruleCount,
                     nodeCount,
+                    _consecutiveFailures,
                     await GetCacheMinutesOrDefaultAsync());
             }
 
             var cacheMinutes = await GetCacheMinutesOrDefaultAsync();
+            var backoffMultiplier = hasUpstream && !(subOk && nodesOk) ? (int)Math.Pow(2, Math.Min(_consecutiveFailures, 3)) : 1;
+            var delayMinutes = cacheMinutes * backoffMultiplier;
             try
             {
-                _logger.LogInformation("等待 {Min} 分钟后执行下一次刷新...", cacheMinutes);
-                await Task.Delay(TimeSpan.FromMinutes(cacheMinutes), stoppingToken);
+                if (backoffMultiplier > 1)
+                {
+                    _logger.LogWarning("检测到连续失败 {Failures} 次，刷新间隔退避至 {Delay} 分钟（基准 {Base} 分钟 × {Multiplier}）",
+                        _consecutiveFailures, delayMinutes, cacheMinutes, backoffMultiplier);
+                }
+                else
+                {
+                    _logger.LogInformation("等待 {Min} 分钟后执行下一次刷新...", delayMinutes);
+                }
+                await Task.Delay(TimeSpan.FromMinutes(delayMinutes), stoppingToken);
             }
             catch (OperationCanceledException)
             {

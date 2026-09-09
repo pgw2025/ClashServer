@@ -61,6 +61,23 @@
         </div>
 }
 
+@if (Model.ShowStaleBanner)
+{
+    <div class="alert alert-warning py-2 small mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        订阅数据不可用：当前展示
+        @if (Model.LastGoodUpdate.HasValue)
+        {
+            <text><strong>@Model.LastGoodUpdate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</strong> 前的缓存数据，</text>
+        }
+        else
+        {
+            <text>本地规则数据（从未成功拉取过上游订阅），</text>
+        }
+        上游恢复后将自动更新。
+    </div>
+}
+
 @if (Model.Rules.Count == 0)
 
 {
@@ -98,16 +115,13 @@ else
                                 <option value="@p">@p</option>
                     }
                     </optgroup>
-                @if (Model.ProxyGroups.Count > 0)
-                {
-                            <optgroup label="@(Model.AutoGroupNodes ? "策略组（自动生成）" : "代理组（上游配置）")">
-                        @foreach (var g in Model.ProxyGroups)
+                <optgroup label="@(Model.AutoGroupNodes ? "策略组（自动生成）" : "代理组（上游配置）")" id="batchGroupsOptgroup">
+                @foreach (var g in Model.ProxyGroups)
 
-                        {
-                                        <option value="@g">@g</option>
-                        }
-                            </optgroup>
+                {
+                            <option value="@g">@g</option>
                 }
+                </optgroup>
                 </select>
                 <button type="submit" form="batchForm" class="btn btn-sm btn-warning fw-bold" onclick="return confirmBatch()">
                     <i class="bi bi-check2-all me-1"></i>批量应用策略
@@ -329,23 +343,15 @@ else
                                             <option value="@p">@p</option>
                                     }
                                 </optgroup>
-                                @if (Model.ProxyGroups.Count > 0)
+                                <optgroup label="@(Model.AutoGroupNodes ? "策略组（自动生成）" : "代理组（上游配置）")" id="ruleGroupsOptgroup">
+                                @foreach (var g in Model.ProxyGroups)
 
                                 {
-                                        <optgroup label="代理组（上游配置）">
-                                        @foreach (var g in Model.ProxyGroups)
-
-                                        {
-                                                    <option value="@g">@g</option>
-                                        }
-                                        </optgroup>
+                                            <option value="@g">@g</option>
                                 }
+                                </optgroup>
                             </select>
-                            @if (!string.IsNullOrEmpty(Model.GroupsError))
-
-                            {
-                                    <div class="text-warning small mt-1"><i class="bi bi-exclamation-triangle me-1"></i>无法加载代理组: @Model.GroupsError</div>
-                            }
+                            <div class="text-warning small mt-1 d-none" id="ruleGroupsError"><i class="bi bi-exclamation-triangle me-1"></i>无法加载代理组: <span id="ruleGroupsErrorText"></span></div>
                             <span asp-validation-for="InputRule.Policy" class="text-danger small"></span>
                         </div>
                         <div class="col-12">
@@ -612,6 +618,41 @@ else
                 new bootstrap.Modal(document.getElementById('ruleModal')).show();
             } catch (e) {
                 alert('加载规则失败: ' + e.message);
+            }
+        }
+
+        // 懒加载：服务端未命中缓存时异步拉取 /api/groups，填充策略下拉
+        document.addEventListener('DOMContentLoaded', function () {
+            var batchOpt = document.getElementById('batchGroupsOptgroup');
+            var ruleOpt = document.getElementById('ruleGroupsOptgroup');
+            if ((batchOpt && batchOpt.querySelectorAll('option').length > 0) ||
+                (ruleOpt && ruleOpt.querySelectorAll('option').length > 0)) return;
+            loadGroupsLazy();
+        });
+
+        async function loadGroupsLazy() {
+            try {
+                var resp = await fetch('/api/groups');
+                var data = await resp.json();
+                if (!data.ok || !data.groups || data.groups.length === 0) {
+                    throw new Error(data.error || '没有可用策略组数据');
+                }
+                [document.getElementById('batchGroupsOptgroup'), document.getElementById('ruleGroupsOptgroup')].forEach(function (opt) {
+                    if (!opt) return;
+                    data.groups.forEach(function (g) {
+                        var option = document.createElement('option');
+                        option.value = g;
+                        option.textContent = g;
+                        opt.appendChild(option);
+                    });
+                });
+            } catch (e) {
+                var err = document.getElementById('ruleGroupsError');
+                if (err) {
+                    var txt = document.getElementById('ruleGroupsErrorText');
+                    if (txt) txt.textContent = e.message || '请检查上游订阅 URL 是否已正确配置。';
+                    err.classList.remove('d-none');
+                }
             }
         }
     </script>

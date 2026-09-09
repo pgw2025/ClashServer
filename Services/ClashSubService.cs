@@ -19,6 +19,18 @@ public class ClashSubService : IClashSubService
     private const string LastUpdateKey = "clash_last_upstream_update";
     private static readonly SemaphoreSlim _fetchLock = new(1, 1);
 
+    /// <summary>默认抓取超时（后台刷新等未显式指定方）</summary>
+    public static readonly TimeSpan DefaultFetchTimeout = TimeSpan.FromSeconds(30);
+    /// <summary>管理页面抓取超时：快速失败，配合 last-good 兜底</summary>
+    public static readonly TimeSpan AdminFetchTimeout = TimeSpan.FromSeconds(5);
+    /// <summary>/sub 公开端点抓取超时</summary>
+    public static readonly TimeSpan PublicSubFetchTimeout = TimeSpan.FromSeconds(10);
+
+    // last-good 快照：最后一次成功抓取的上游订阅（进程生命周期，ClearCache 不清除）
+    private string? _lastGoodRawYaml;
+    private string? _lastGoodUpstreamUrl;
+    private DateTimeOffset? _lastGoodRawAt;
+
     public ClashSubService(
         IHttpClientFactory httpClientFactory,
         IStorageService storage,
@@ -45,49 +57,66 @@ public class ClashSubService : IClashSubService
         return _cache.TryGetValue(LastUpdateKey, out DateTimeOffset ts) ? ts : null;
     }
 
-    public async Task<string> GetMergedSubAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default)
+    public DateTimeOffset? GetLastGoodUpdate()
+    {
+        return _lastGoodRawAt;
+    }
+
+    public List<ProxyNode>? GetCachedNodes()
+    {
+        return _cache.TryGetValue(NodesCacheKey, out List<ProxyNode>? nodes) ? nodes : null;
+    }
+
+    public List<string>? GetCachedGroups()
+    {
+        return _cache.TryGetValue(GroupsCacheKey, out List<string>? groups) ? groups : null;
+    }
+
+    public async Task<string> GetMergedSubAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default, TimeSpan? fetchTimeout = null)
+    {
+        var result = await GetMergedSubCoreAsync(baseUrl, forceRefresh, ct, fetchTimeout);
+        return result.Yaml;
+    }
+
+    public async Task<SubFetchResult> GetMergedSubSafeAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default, TimeSpan? fetchTimeout = null)
+    {
+        return await GetMergedSubCoreAsync(baseUrl, forceRefresh, ct, fetchTimeout);
+    }
+
+    private async Task<SubFetchResult> GetMergedSubCoreAsync(string baseUrl, bool forceRefresh, CancellationToken ct, TimeSpan? fetchTimeout)
     {
         if (!forceRefresh && _cache.TryGetValue(CacheKey, out string? cached) && !string.IsNullOrEmpty(cached))
         {
-            return cached;
+            DateTimeOffset? dataAt = _cache.TryGetValue(LastUpdateKey, out DateTimeOffset lastTs) ? lastTs : null;
+            return new SubFetchResult(cached, false, dataAt);
         }
 
-        await _fetchLock.WaitAsync(ct);
+        var settings = await _storage.GetSettingsAsync();
+        if (string.IsNullOrWhiteSpace(settings.UpstreamUrl))
+        {
+            throw new InvalidOperationException("未配置上游订阅 URL，请在设置中配置。");
+        }
+
         try
         {
-            if (!forceRefresh && _cache.TryGetValue(CacheKey, out cached) && !string.IsNullOrEmpty(cached))
-            {
-                return cached;
-            }
-
-            var settings = await _storage.GetSettingsAsync();
-            if (string.IsNullOrWhiteSpace(settings.UpstreamUrl))
-            {
-                throw new InvalidOperationException("未配置上游订阅 URL，请在设置中配置。");
-            }
-
-            var client = _httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("clash-verge/v2.0.3");
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
-            client.DefaultRequestHeaders.TryAddWithoutValidation("Connection", "keep-alive");
-
-            using var resp = await client.GetAsync(settings.UpstreamUrl, HttpCompletionOption.ResponseContentRead, ct);
-            resp.EnsureSuccessStatusCode();
-
-            var rawBytes = await resp.Content.ReadAsByteArrayAsync(ct);
-            var upstreamYaml = Encoding.UTF8.GetString(rawBytes);
-            upstreamYaml = upstreamYaml.TrimStart('\uFEFF');
+            // 抓取收敛：复用 Raw 抓取（锁、超时、快照、降级均在其中，全系统仅此一路真实抓取）
+            var raw = await GetRawUpstreamCoreAsync(forceRefresh, ct, fetchTimeout);
 
             var rules = await _storage.GetRulesAsync();
             var enabledRules = rules.Where(r => r.Enabled).ToList();
 
-            var mergedYaml = MergeCustomRules(upstreamYaml, enabledRules, settings.InsertRulesBefore, settings.ReplaceMode);
+            var mergedYaml = MergeCustomRules(raw.Yaml, enabledRules, settings.InsertRulesBefore, settings.ReplaceMode);
 
             if (settings.AutoGroupNodes)
             {
                 mergedYaml = ApplyAutoGrouping(mergedYaml);
+            }
+
+            if (raw.Degraded)
+            {
+                // 降级数据不写入常规缓存，避免污染"最后更新时间"，保证上游恢复后普通请求自动探测
+                _logger.LogWarning("merged 基于 last-good 快照生成（快照时间: {At}）", _lastGoodRawAt);
+                return new SubFetchResult(mergedYaml, true, _lastGoodRawAt);
             }
 
             var cacheMinutes = settings.CacheMinutes > 0 ? settings.CacheMinutes : 15;
@@ -99,16 +128,27 @@ public class ClashSubService : IClashSubService
             _cache.Set(CacheKey, mergedYaml, cacheOpts);
             _cache.Set(LastUpdateKey, DateTimeOffset.Now, cacheOpts);
 
-            return mergedYaml;
+            return new SubFetchResult(mergedYaml, false, DateTimeOffset.Now);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "获取或合并 Clash 订阅失败");
+            if (!forceRefresh && _lastGoodRawYaml != null && string.Equals(_lastGoodUpstreamUrl, settings.UpstreamUrl, StringComparison.Ordinal))
+            {
+                _logger.LogWarning("上游不可达，降级从 last-good 快照重新合并（快照时间: {At}）", _lastGoodRawAt);
+                var rules = await _storage.GetRulesAsync();
+                var enabledRules = rules.Where(r => r.Enabled).ToList();
+
+                var mergedYaml = MergeCustomRules(_lastGoodRawYaml, enabledRules, settings.InsertRulesBefore, settings.ReplaceMode);
+
+                if (settings.AutoGroupNodes)
+                {
+                    mergedYaml = ApplyAutoGrouping(mergedYaml);
+                }
+
+                return new SubFetchResult(mergedYaml, true, _lastGoodRawAt);
+            }
             throw;
-        }
-        finally
-        {
-            _fetchLock.Release();
         }
     }
 
@@ -120,7 +160,7 @@ public class ClashSubService : IClashSubService
             if (string.IsNullOrWhiteSpace(settings.UpstreamUrl)) return false;
 
             var client = _httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(10);
+            client.Timeout = TimeSpan.FromSeconds(5);
             using var req = new HttpRequestMessage(HttpMethod.Head, settings.UpstreamUrl);
             using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             return resp.IsSuccessStatusCode;
@@ -132,7 +172,7 @@ public class ClashSubService : IClashSubService
                 var settings = await _storage.GetSettingsAsync();
                 if (string.IsNullOrWhiteSpace(settings.UpstreamUrl)) return false;
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10);
+                client.Timeout = TimeSpan.FromSeconds(5);
                 using var resp = await client.GetAsync(settings.UpstreamUrl, HttpCompletionOption.ResponseHeadersRead, ct);
                 return resp.IsSuccessStatusCode;
             }
@@ -141,6 +181,13 @@ public class ClashSubService : IClashSubService
                 return false;
             }
         }
+    }
+
+    private static CancellationTokenSource CreateLinkedCts(CancellationToken ct, TimeSpan? fetchTimeout)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(fetchTimeout ?? DefaultFetchTimeout);
+        return cts;
     }
 
     public List<string> ParseYamlRules(string yamlRulesText)
@@ -639,14 +686,14 @@ public class ClashSubService : IClashSubService
         return string.Join("\n", result);
     }
 
-    public async Task<List<ProxyNode>> GetProxyNodesAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default)
+    public async Task<List<ProxyNode>> GetProxyNodesAsync(string baseUrl, bool forceRefresh = false, CancellationToken ct = default, TimeSpan? fetchTimeout = null)
     {
         if (!forceRefresh && _cache.TryGetValue(NodesCacheKey, out List<ProxyNode>? cached) && cached != null)
         {
             return cached;
         }
 
-        var rawYaml = await GetRawUpstreamYamlAsync(forceRefresh, ct);
+        var rawYaml = await GetRawUpstreamYamlAsync(forceRefresh, ct, fetchTimeout);
         var nodes = ParseProxyNodes(rawYaml);
 
         var settings = await _storage.GetSettingsAsync();
@@ -694,11 +741,17 @@ public class ClashSubService : IClashSubService
         return node;
     }
 
-    public async Task<string> GetRawUpstreamYamlAsync(bool forceRefresh = false, CancellationToken ct = default)
+    public async Task<string> GetRawUpstreamYamlAsync(bool forceRefresh = false, CancellationToken ct = default, TimeSpan? fetchTimeout = null)
+    {
+        var result = await GetRawUpstreamCoreAsync(forceRefresh, ct, fetchTimeout);
+        return result.Yaml;
+    }
+
+    private async Task<RawFetchResult> GetRawUpstreamCoreAsync(bool forceRefresh, CancellationToken ct, TimeSpan? fetchTimeout)
     {
         if (!forceRefresh && _cache.TryGetValue(RawCacheKey, out string? cached) && !string.IsNullOrEmpty(cached))
         {
-            return cached;
+            return new RawFetchResult(cached, false);
         }
 
         var settings = await _storage.GetSettingsAsync();
@@ -714,19 +767,60 @@ public class ClashSubService : IClashSubService
         client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
         client.DefaultRequestHeaders.TryAddWithoutValidation("Connection", "keep-alive");
 
-        using var resp = await client.GetAsync(settings.UpstreamUrl, HttpCompletionOption.ResponseContentRead, ct);
-        resp.EnsureSuccessStatusCode();
+        try
+        {
+            // 全系统唯一抓取锁：保证同一时刻只有一路真实抓取
+            var lockWait = TimeSpan.FromSeconds((fetchTimeout ?? DefaultFetchTimeout).TotalSeconds + 3);
+            bool acquired = false;
+            try
+            {
+                acquired = await _fetchLock.WaitAsync(lockWait, ct);
+                if (!acquired)
+                {
+                    throw new TimeoutException($"等待订阅抓取锁超时（{lockWait.TotalSeconds:0}s），可能有其他请求正在进行抓取。");
+                }
 
-        var rawBytes = await resp.Content.ReadAsByteArrayAsync(ct);
-        var rawYaml = Encoding.UTF8.GetString(rawBytes).TrimStart('\uFEFF');
+                // 双重检查：等待锁期间其他请求可能已成功抓取并写入缓存
+                if (!forceRefresh && _cache.TryGetValue(RawCacheKey, out string? cachedInLock) && !string.IsNullOrEmpty(cachedInLock))
+                {
+                    return new RawFetchResult(cachedInLock, false);
+                }
 
-        var cacheMinutes = settings.CacheMinutes > 0 ? settings.CacheMinutes : 15;
-        _cache.Set(RawCacheKey, rawYaml, TimeSpan.FromMinutes(cacheMinutes));
+                using var cts = CreateLinkedCts(ct, fetchTimeout);
+                using var resp = await client.GetAsync(settings.UpstreamUrl, HttpCompletionOption.ResponseContentRead, cts.Token);
+                resp.EnsureSuccessStatusCode();
 
-        return rawYaml;
+                var rawBytes = await resp.Content.ReadAsByteArrayAsync(cts.Token);
+                var rawYaml = Encoding.UTF8.GetString(rawBytes).TrimStart('\uFEFF');
+
+                var cacheMinutes = settings.CacheMinutes > 0 ? settings.CacheMinutes : 15;
+                _cache.Set(RawCacheKey, rawYaml, TimeSpan.FromMinutes(cacheMinutes));
+
+                // 更新 last-good 快照（记录所属上游 URL，URL 变更后自动失效）
+                _lastGoodRawYaml = rawYaml;
+                _lastGoodUpstreamUrl = settings.UpstreamUrl;
+                _lastGoodRawAt = DateTimeOffset.Now;
+
+                return new RawFetchResult(rawYaml, false);
+            }
+            finally
+            {
+                if (acquired) _fetchLock.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "获取上游订阅失败");
+            if (!forceRefresh && _lastGoodRawYaml != null && string.Equals(_lastGoodUpstreamUrl, settings.UpstreamUrl, StringComparison.Ordinal))
+            {
+                _logger.LogWarning("上游不可达，降级返回 last-good 订阅数据（快照时间: {At}）", _lastGoodRawAt);
+                return new RawFetchResult(_lastGoodRawYaml, true);
+            }
+            throw;
+        }
     }
 
-    public async Task<List<string>> GetProxyGroupsAsync(bool forceRefresh = false, CancellationToken ct = default)
+    public async Task<List<string>> GetProxyGroupsAsync(bool forceRefresh = false, CancellationToken ct = default, TimeSpan? fetchTimeout = null)
     {
         if (!forceRefresh && _cache.TryGetValue(GroupsCacheKey, out List<string>? cached) && cached != null)
             return cached;
@@ -737,13 +831,13 @@ public class ClashSubService : IClashSubService
         if (settings.AutoGroupNodes)
         {
             // 自动分组模式：返回自动生成的策略组名称
-            var rawYaml = await GetRawUpstreamYamlAsync(forceRefresh, ct);
+            var rawYaml = await GetRawUpstreamYamlAsync(forceRefresh, ct, fetchTimeout);
             var nodes = ParseProxyNodes(rawYaml);
             groups = GetAutoGeneratedGroupNames(nodes);
         }
         else
         {
-            var rawYaml = await GetRawUpstreamYamlAsync(forceRefresh, ct);
+            var rawYaml = await GetRawUpstreamYamlAsync(forceRefresh, ct, fetchTimeout);
             groups = ParseProxyGroups(rawYaml);
         }
 
