@@ -10,6 +10,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IStorageService, StorageService>();
 builder.Services.AddSingleton<IClashSubService, ClashSubService>();
 builder.Services.AddHostedService<BackgroundRefreshService>();
+builder.Services.AddManagementAuth();
 
 var app = builder.Build();
 
@@ -22,6 +23,7 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/sub", async (HttpContext context, IClashSubService subService, IStorageService storage, ILogger<Program> logger) =>

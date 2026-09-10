@@ -2,7 +2,9 @@ using System.Text.Json;
 using ClashServer.Models;
 using ClashServer.Models.Dtos;
 using ClashServer.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ClashServer.Web;
 
@@ -14,13 +16,55 @@ public static class ApiEndpoints
 {
     public static void MapApi(this WebApplication app)
     {
-        var group = app.MapGroup("/api");
+        // /api/sub-health 由 Program.cs 单独注册，保持无鉴权（健康探针，与 /sub 同理隔离于登录）
+        var group = app.MapGroup("/api")
+            .RequireAuthorization()
+            .AddEndpointFilter<ApiCsrfFilter>();
+
+        // 登录/登出/状态：独立匿名组（置于 /api 之外，避免被 RequireAuthorization 拦截）
+        MapAuth(app.MapGroup("/api/auth"));
 
         MapRules(group);
         MapSettings(group);
         MapConfig(group);
         MapNodes(group);
         MapDashboard(group);
+    }
+
+    private static void MapAuth(RouteGroupBuilder g)
+    {
+        g.MapPost("/login", async (HttpContext ctx) =>
+        {
+            var (req, badJson) = await ReadJson<LoginRequest>(ctx.Request.Body);
+            if (badJson || req == null)
+                return Results.Json(ApiResponse<object>.Failure("请求体无效"), statusCode: 400);
+            var settings = await storageGet(ctx.RequestServices);
+            // fail-closed：服务端未配置 Token 时一律拒绝登录
+            if (string.IsNullOrWhiteSpace(settings.AccessToken))
+                return Results.Json(ApiResponse<object>.Failure("登录失败：服务器未配置 accessToken"), statusCode: 401);
+            if (!AuthSetup.TokenMatches(req?.AccessToken ?? string.Empty, settings.AccessToken))
+                return Results.Json(ApiResponse<object>.Failure("登录失败：Token 无效"), statusCode: 401);
+
+            var principal = AuthSetup.BuildPrincipal(settings.AccessToken);
+            await ctx.SignInAsync(principal, new AuthenticationProperties
+            {
+                IsPersistent = true,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(30)
+            });
+            return Results.Ok(ApiResponse<object>.Success(new { loggedIn = true }));
+        });
+
+        g.MapGet("/status", (HttpContext ctx) =>
+        {
+            var loggedIn = ctx.User.Identity?.IsAuthenticated == true;
+            return Results.Ok(ApiResponse<object>.Success(new { loggedIn }));
+        });
+
+        g.MapPost("/logout", async (HttpContext ctx) =>
+        {
+            await ctx.SignOutAsync();
+            return Results.Ok(ApiResponse<object>.Success(new { loggedOut = true }));
+        });
     }
 
     private static void MapRules(RouteGroupBuilder g)
@@ -33,7 +77,7 @@ public static class ApiEndpoints
             return Results.Ok(ApiResponse<List<RuleDto>>.Success(rules, stale.LastGood, stale.IsStale));
         });
 
-        g.MapPost("/rules", async (RuleDto dto, IStorageService storage, IClashSubService sub) =>
+        g.MapPost("/rules", async ([FromBody] RuleDto dto, IStorageService storage, IClashSubService sub) =>
         {
             if (!IsRuleValid(dto, out var error)) return Results.BadRequest(ApiResponse<object>.Failure(error));
             var rules = await storage.GetRulesAsync();
@@ -46,7 +90,7 @@ public static class ApiEndpoints
             return Results.Ok(ApiResponse<RuleDto>.Success(RuleDto.From(rule)));
         });
 
-        g.MapPut("/rules/{id}", async (Guid id, RuleDto dto, IStorageService storage, IClashSubService sub) =>
+        g.MapPut("/rules/{id}", async (Guid id, [FromBody] RuleDto dto, IStorageService storage, IClashSubService sub) =>
         {
             var rules = await storage.GetRulesAsync();
             var idx = rules.FindIndex(r => r.Id == id);
@@ -115,7 +159,7 @@ public static class ApiEndpoints
             return Results.Ok(ApiResponse<object>.Success(new { moved }));
         });
 
-        g.MapPost("/rules/batch", async (BatchRequest req, IStorageService storage, IClashSubService sub) =>
+        g.MapPost("/rules/batch", async ([FromBody] BatchRequest req, IStorageService storage, IClashSubService sub) =>
         {
             var ids = req.Ids?.ToHashSet() ?? new HashSet<Guid>();
             var rules = await storage.GetRulesAsync();
@@ -142,14 +186,14 @@ public static class ApiEndpoints
         });
 
         // 解析 YAML 规则文本，返回预览（供 SPA 导入页调用；解析逻辑复用 RuleParser）
-        g.MapPost("/rules/parse", (ParseRequest req) =>
+        g.MapPost("/rules/parse", ([FromBody] ParseRequest req) =>
         {
             var rules = RuleParser.ParseText(req?.Yaml ?? string.Empty);
             return Results.Ok(ApiResponse<List<CustomRule>>.Success(rules));
         });
 
         // 导入已确认的规则列表，批量插入并刷新缓存
-        g.MapPost("/rules/import", async (ImportRequest req, IStorageService storage, IClashSubService sub) =>
+        g.MapPost("/rules/import", async ([FromBody] ImportRequest req, IStorageService storage, IClashSubService sub) =>
         {
             if (req?.Rules == null || req.Rules.Count == 0)
                 return Results.BadRequest(ApiResponse<object>.Failure("没有可导入的规则"));
@@ -176,7 +220,7 @@ public static class ApiEndpoints
             return Results.Ok(ApiResponse<SettingsDto>.Success(SettingsDto.From(settings)));
         });
 
-        g.MapPut("/settings", async (SettingsDto dto, IStorageService storage, IClashSubService sub) =>
+        g.MapPut("/settings", async ([FromBody] SettingsDto dto, IStorageService storage, IClashSubService sub) =>
         {
             var settings = new AppSettings
             {
@@ -276,7 +320,7 @@ public static class ApiEndpoints
         });
 
         // 单节点测速：节点名可能含中文/空格/斜杠，不能作 URL 路径参数，改用 body 传 name
-        g.MapPost("/nodes/latency", async (LatencyRequest req, IClashSubService sub, IStorageService storage, HttpContext ctx) =>
+        g.MapPost("/nodes/latency", async ([FromBody] LatencyRequest req, IClashSubService sub, IStorageService storage, HttpContext ctx) =>
         {
             if (string.IsNullOrWhiteSpace(req?.Name)) return Results.BadRequest(ApiResponse<object>.Failure("name 不能为空"));
             var settings = await storage.GetSettingsAsync();
@@ -411,11 +455,36 @@ public static class ApiEndpoints
         }
         return count;
     }
+
+    private static async Task<(T? Value, bool Bad)> ReadJson<T>(Stream body) where T : class
+    {
+        var json = await new StreamReader(body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(json)) return (null, false);
+        try
+        {
+            var value = JsonSerializer.Deserialize<T>(json, JsonOptions);
+            return value == null ? (null, false) : (value, false);
+        }
+        catch (JsonException)
+        {
+            return (null, true);
+        }
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static Task<AppSettings> storageGet(IServiceProvider sp)
+        => sp.GetRequiredService<IStorageService>().GetSettingsAsync();
 }
 
 public class ParseRequest
 {
     public string? Yaml { get; set; }
+}
+
+public class LoginRequest
+{
+    public string? AccessToken { get; set; }
 }
 
 public class ImportRequest
