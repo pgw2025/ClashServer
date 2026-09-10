@@ -1,5 +1,6 @@
 using System.Text;
 using ClashServer.Services;
+using ClashServer.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,42 +79,7 @@ app.MapGet("/api/sub-health", async (IClashSubService subService, HttpContext co
     await context.Response.WriteAsJsonAsync(new { ok, timestamp = DateTimeOffset.Now });
 });
 
-app.MapGet("/api/nodes", async (IClashSubService subService, IStorageService storage, HttpContext context, ILogger<Program> logger) =>
-{
-    try
-    {
-        var settings = await storage.GetSettingsAsync();
-        var timeout = TimeSpan.FromSeconds(settings.AdminFetchTimeoutSeconds > 0 ? settings.AdminFetchTimeoutSeconds : 5);
-        var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
-        var nodes = await subService.GetProxyNodesAsync(baseUrl, false, context.RequestAborted, timeout);
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await context.Response.WriteAsJsonAsync(new { ok = true, nodes });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "/api/nodes 拉取节点失败");
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await context.Response.WriteAsJsonAsync(new { ok = false, error = ex.Message });
-    }
-});
-
-app.MapGet("/api/groups", async (IClashSubService subService, IStorageService storage, HttpContext context, ILogger<Program> logger) =>
-{
-    try
-    {
-        var settings = await storage.GetSettingsAsync();
-        var timeout = TimeSpan.FromSeconds(settings.AdminFetchTimeoutSeconds > 0 ? settings.AdminFetchTimeoutSeconds : 5);
-        var groups = await subService.GetProxyGroupsAsync(false, context.RequestAborted, timeout);
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await context.Response.WriteAsJsonAsync(new { ok = true, groups });
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "/api/groups 拉取策略组失败");
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await context.Response.WriteAsJsonAsync(new { ok = false, error = ex.Message });
-    }
-});
+app.MapApi();
 
 app.MapRazorPages();
 
