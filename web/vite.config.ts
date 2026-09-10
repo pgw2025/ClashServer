@@ -22,7 +22,7 @@ export default defineConfig({
   // base:'./' → index.html 用相对路径引用 assets，部署到子路径也不会资源 404
   base: './',
   build: {
-    outDir: '../wwwroot',
+    outDir: '../server/wwwroot',
     emptyOutDir: true
   }
 })

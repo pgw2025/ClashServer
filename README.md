@@ -50,38 +50,43 @@
 
 ## 项目结构
 
+前后端分离：后端（ASP.NET Core API）与前端（Vue3）各自独立目录。
+
 ```
 ClashServer/
-├── Program.cs                    # 应用入口，配置服务和中间件，定义 /sub 和 /api/sub-health 端点
-├── ClashServer.csproj            # 项目文件
-├── appsettings.json              # 应用配置（日志级别、缓存参数）
+├── server/                        # 后端 ASP.NET Core 程序
+│   ├── Program.cs                 # 应用入口，配置服务和中间件，定义 /sub 和 /api/* 端点
+│   ├── ClashServer.csproj         # 项目文件
+│   ├── appsettings.json           # 应用配置（日志级别、缓存参数、VueApp 开关）
+│   ├── ApiEndpoints.cs            # 管理端 REST API（/api/rules、/api/settings 等）
+│   ├── AuthSetup.cs               # 管理端 Cookie 认证 + CSRF 防护
+│   ├── Models/
+│   │   ├── AppSettings.cs         # 设置模型（上游URL、Token、缓存时长、自动分组等）
+│   │   ├── CustomRule.cs          # 自定义规则模型 + YAML 行输出
+│   │   ├── Dtos.cs                # 前后端交互 DTO（统一响应壳、Rule/Settings/Config DTO）
+│   │   └── ProxyNode.cs           # 代理节点模型 + 延迟颜色分级
+│   ├── Services/
+│   │   ├── IClashSubService.cs    # 订阅服务接口
+│   │   ├── ClashSubService.cs     # 核心服务：获取/合并/转换 YAML、节点解析、延迟测试、自动分组
+│   │   ├── IStorageService.cs     # 存储服务接口
+│   │   ├── StorageService.cs      # JSON 文件读写（Data/rules.json、Data/settings.json）
+│   │   └── BackgroundRefreshService.cs  # 后台定时刷新缓存
+│   ├── Pages/                     # 旧 Razor 页面（VueApp:Enabled=false 时启用）
+│   ├── wwwroot/                   # Vue 构建产物（由 web 构建输出，已 gitignore）
+│   └── Data/                      # 运行时数据（自动创建，已 gitignore）
+│       ├── rules.json             # 自定义规则存储
+│       └── settings.json          # 应用设置存储
 │
-├── Models/
-│   ├── AppSettings.cs            # 设置模型（上游URL、Token、缓存时长、自动分组等）
-│   ├── CustomRule.cs             # 自定义规则模型 + YAML 行输出
-│   └── ProxyNode.cs              # 代理节点模型 + 延迟颜色分级
+├── web/                          # 前端 Vue3 + Vite + Pinia + TS
+│   ├── vite.config.ts            # 构建输出到 ../server/wwwroot，开发代理 /api 到后端
+│   └── src/
+│       ├── views/                # 页面视图（登录/仪表盘/规则/导入/配置/设置）
+│       ├── components/           # 通用组件（布局、StaleBanner 等）
+│       ├── stores/               # Pinia 状态（auth 等）
+│       ├── api/                  # axios 封装与 API 方法
+│       └── router/               # Vue Router 与登录守卫
 │
-├── Services/
-│   ├── IClashSubService.cs       # 订阅服务接口
-│   ├── ClashSubService.cs        # 核心服务：获取/合并/转换 YAML、节点解析、延迟测试、自动分组
-│   ├── IStorageService.cs        # 存储服务接口
-│   ├── StorageService.cs         # JSON 文件读写（Data/rules.json、Data/settings.json）
-│   └── BackgroundRefreshService.cs  # 后台定时刷新缓存
-│
-├── Pages/
-│   ├── Index.cshtml / .cs         # 仪表盘：节点列表、延迟测试、订阅信息
-│   ├── Settings.cshtml / .cs      # 设置页：上游URL、Token、缓存、自动分组配置
-│   ├── Config.cshtml / .cs        # 配置对比：原始 vs 合并后的 YAML
-│   └── Rules/
-│       ├── Index.cshtml / .cs     # 规则管理：增删改查、排序、批量操作、搜索
-│       └── Import.cshtml / .cs    # 批量导入：YAML 粘贴/文件上传
-│
-├── Shared/
-│   └── _Layout.cshtml             # 布局模板（导航栏、响应式框架）
-│
-└── Data/                          # 运行时数据（自动创建，已 gitignore）
-    ├── rules.json                 # 自定义规则存储
-    └── settings.json              # 应用设置存储
+└── docs/                         # 改造方案与回归文档
 ```
 
 ## 快速开始
@@ -98,14 +103,22 @@ ClashServer/
 git clone <repo-url>
 cd ClashServer
 
-# 还原依赖
+# 后端（在 server/ 目录）
+cd server
 dotnet restore
-
-# 运行
 dotnet run
+
+# 前端（可选，开发模式，另开终端）
+cd ../web
+npm install
+npm run dev          # 开发代理 http://localhost:5173，/api 转发到后端
 ```
 
-浏览器打开 `https://localhost:5001` 或 `http://localhost:5000`。
+浏览器打开后端地址（`https://localhost:5001` 或 `http://localhost:5000`），
+或开发模式下访问 `http://localhost:5173`。
+
+> 说明：`VueApp:Enabled` 为 `true` 时后端托管 `wwwroot` 内的 Vue 构建产物（生产模式，单端口同源）；
+> 为 `false` 时启用旧 Razor 页面。产物需先 `cd web && npm run build` 生成。
 
 ### 首次配置
 
@@ -170,10 +183,10 @@ http://your-server:port/sub
 
 ## 数据存储
 
-所有数据以 JSON 文件存储在 `Data/` 目录下，无需数据库：
+所有数据以 JSON 文件存储在 `server/Data/` 目录下，无需数据库：
 
-- `Data/rules.json` - 自定义规则列表
-- `Data/settings.json` - 应用设置
+- `server/Data/rules.json` - 自定义规则列表
+- `server/Data/settings.json` - 应用设置
 
 这两个文件已在 `.gitignore` 中排除。
 
@@ -182,19 +195,29 @@ http://your-server:port/sub
 ### 开发环境
 
 ```bash
+cd server
 dotnet run
 ```
 
 ### 生产环境
 
 ```bash
-# 发布
+# 1) 构建前端产物（输出到 server/wwwroot）
+cd web
+npm install
+npm run build
+
+# 2) 发布后端（server/ 目录内，含 wwwroot 产物）
+cd ../server
 dotnet publish -c Release -o ./publish
 
-# 运行
+# 3) 运行
 cd publish
 dotnet ClashServer.dll
 ```
+
+生产模式请将 `appsettings.json` 中 `VueApp:Enabled` 设为 `true`，
+以便后端托管 Vue 产物并启用 `/api` 全量鉴权；设为 `false` 则回到旧 Razor 页面模式（两者互斥）。
 
 可通过 `appsettings.json` 或环境变量配置监听端口。
 

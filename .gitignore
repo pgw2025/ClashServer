@@ -1,6 +1,6 @@
 # Build output
-bin/
-obj/
+server/bin/
+server/obj/
 
 # IDE
 .vscode/
@@ -10,8 +10,8 @@ obj/
 *.suo
 
 # Runtime data (user-specific config & rules)
-Data/rules.json
-Data/settings.json
+server/Data/rules.json
+server/Data/settings.json
 
 # Logs
 *.log
@@ -24,7 +24,7 @@ Thumbs.db
 # Frontend (Vue) — 依赖与构建产物不提交，由 npm run build 生成
 web/node_modules/
 web/dist/
-wwwroot/
+server/wwwroot/
 
 # 临时测试文件
 cookies.txt
