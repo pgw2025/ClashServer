@@ -83,6 +83,32 @@ app.MapGet("/api/sub-health", async (IClashSubService subService, HttpContext co
 
 app.MapApi();
 
-app.MapRazorPages();
+// 三联动开关：Vue 模式（SPA fallback + /api 全量鉴权）与旧 Razor 模式互斥，绝不可同时开启。
+// 因为 ASP.NET Core 路由大小写不敏感，SPA 路由 /settings 会被 Razor 页面 /Settings 截获，
+// 必须通过此开关二选一。
+var vueEnabled = app.Configuration.GetValue<bool>("VueApp:Enabled");
+if (vueEnabled)
+{
+    // SPA 模式：MapRazorPages 不启用；把前端路由回退到 index.html，但排除 /api 与 /sub
+    app.MapFallback(async (HttpContext ctx) =>
+    {
+        var path = ctx.Request.Path.Value ?? string.Empty;
+        if (path.StartsWith("/api") || path.StartsWith("/sub"))
+        {
+            // 打错的 /api、/sub 路径，返回 404 JSON，绝不能被 fallback 吞成 index.html
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "Not found" });
+            return;
+        }
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        await ctx.Response.SendFileAsync(Path.Combine("wwwroot", "index.html"));
+    });
+}
+else
+{
+    // 旧 Razor 模式：SPA fallback 不启用；/api 鉴权同步放开（旧页面内联 JS 直接调 /api/nodes 等公开端点）
+    app.MapRazorPages();
+}
 
 app.Run();

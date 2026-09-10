@@ -17,9 +17,11 @@ public static class ApiEndpoints
     public static void MapApi(this WebApplication app)
     {
         // /api/sub-health 由 Program.cs 单独注册，保持无鉴权（健康探针，与 /sub 同理隔离于登录）
+        // /api 鉴权三联动：仅 Vue 模式启用；旧 Razor 模式放开（旧页面内联 JS 匿名拉 /api/nodes 等）
+        var requireAuth = app.Configuration.GetValue<bool>("VueApp:Enabled");
         var group = app.MapGroup("/api")
-            .RequireAuthorization()
             .AddEndpointFilter<ApiCsrfFilter>();
+        if (requireAuth) group = group.RequireAuthorization();
 
         // 登录/登出/状态：独立匿名组（置于 /api 之外，避免被 RequireAuthorization 拦截）
         MapAuth(app.MapGroup("/api/auth"));
