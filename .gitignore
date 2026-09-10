@@ -4,6 +4,7 @@ obj/
 
 # IDE
 .vscode/
+.workbuddy/
 .vs/
 *.user
 *.suo
@@ -19,3 +20,15 @@ logs/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Frontend (Vue) — 依赖与构建产物不提交，由 npm run build 生成
+web/node_modules/
+web/dist/
+wwwroot/
+
+# 临时测试文件
+cookies.txt
+runlog.txt
+runerr.txt
+_login_*.json
+_rule_*.json
