@@ -7,10 +7,12 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace ClashServer.Web;
 
-/// <summary>管理端 Cookie 认证配置、accessToken 校验与会话绑定。</summary>
+/// <summary>管理端 Cookie 认证配置、账密校验与会话绑定。</summary>
 public static class AuthSetup
 {
-    public const string TokenHashClaim = "vn"; // token 摘要 claim
+    public const string CredentialHashClaim = "cred"; // 凭据（用户名|密码哈希）摘要 claim
+
+    private const int PasswordIterations = 210_000;
 
     public static string HashToken(string token)
     {
@@ -18,7 +20,38 @@ public static class AuthSetup
         return Convert.ToHexString(bytes);
     }
 
-    /// <summary>注册 Cookie 认证 + 授权，并挂载会话绑定（Token 轮换后旧会话自动失效）。</summary>
+    /// <summary>PBKDF2-HMAC-SHA256 加盐哈希，输出格式 pbkdf2-sha256$迭代次数$盐Base64$哈希Base64。</summary>
+    public static string HashPassword(string password)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, PasswordIterations, HashAlgorithmName.SHA256, 32);
+        return $"pbkdf2-sha256${PasswordIterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+    }
+
+    /// <summary>固定时间比较校验密码；格式非法或参数为空一律视为不匹配。</summary>
+    public static bool VerifyPassword(string password, string storedHash)
+    {
+        if (string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(storedHash)) return false;
+        var parts = storedHash.Split('$');
+        if (parts.Length != 4 || parts[0] != "pbkdf2-sha256"
+            || !int.TryParse(parts[1], out var iterations) || iterations <= 0)
+        {
+            return false;
+        }
+        try
+        {
+            var salt = Convert.FromBase64String(parts[2]);
+            var expected = Convert.FromBase64String(parts[3]);
+            var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
+            return CryptographicOperations.FixedTimeEquals(actual, expected);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>注册 Cookie 认证 + 授权，并挂载会话绑定（改密/改名后旧会话自动失效）。</summary>
     public static void AddManagementAuth(this IServiceCollection services)
     {
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -41,15 +74,15 @@ public static class AuthSetup
                     return Task.CompletedTask;
                 };
 
-                // 会话绑定：principal 内记录 token 摘要，Token 变更则吊销会话
+                // 会话绑定：principal 内记录凭据摘要，改密/改名则吊销会话
                 options.Events.OnValidatePrincipal = ctx =>
                 {
                     var storage = ctx.HttpContext.RequestServices.GetRequiredService<IStorageService>();
                     var settings = storage.GetSettingsAsync().GetAwaiter().GetResult();
-                    var currentHash = string.IsNullOrWhiteSpace(settings.AccessToken)
+                    var currentHash = string.IsNullOrWhiteSpace(settings.Username) || string.IsNullOrWhiteSpace(settings.PasswordHash)
                         ? string.Empty
-                        : HashToken(settings.AccessToken);
-                    var principalHash = ctx.Principal?.FindFirst(TokenHashClaim)?.Value;
+                        : HashToken($"{settings.Username}|{settings.PasswordHash}");
+                    var principalHash = ctx.Principal?.FindFirst(CredentialHashClaim)?.Value;
                     if (!string.IsNullOrEmpty(currentHash) && !string.Equals(currentHash, principalHash, StringComparison.Ordinal))
                     {
                         ctx.RejectPrincipal();
@@ -61,22 +94,12 @@ public static class AuthSetup
         services.AddAuthorization();
     }
 
-    /// <summary>固定时间比较，防时序侧信道。两边任意一个为空一律视为不匹配。</summary>
-    public static bool TokenMatches(string provided, string expected)
-    {
-        if (string.IsNullOrWhiteSpace(expected)) return false; // service 未配 Token → 拒绝（fail-closed）
-        if (string.IsNullOrWhiteSpace(provided)) return false;
-        var a = Encoding.UTF8.GetBytes(provided);
-        var b = Encoding.UTF8.GetBytes(expected);
-        return CryptographicOperations.FixedTimeEquals(a, b);
-    }
-
-    public static ClaimsPrincipal BuildPrincipal(string token)
+    public static ClaimsPrincipal BuildPrincipal(string username, string passwordHash)
     {
         var identity = new ClaimsIdentity(new[]
         {
-            new Claim(TokenHashClaim, HashToken(token)),
-            new Claim(ClaimTypes.Name, "admin")
+            new Claim(CredentialHashClaim, HashToken($"{username}|{passwordHash}")),
+            new Claim(ClaimTypes.Name, username)
         }, CookieAuthenticationDefaults.AuthenticationScheme);
         return new ClaimsPrincipal(identity);
     }

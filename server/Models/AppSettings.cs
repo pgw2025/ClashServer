@@ -11,9 +11,22 @@ public class AppSettings
     public string? UpstreamUrl { get; set; }
 
     [JsonPropertyName("accessToken")]
-    [Display(Name = "访问 Token")]
+    [Display(Name = "订阅 Token")]
     [StringLength(128, MinimumLength = 4, ErrorMessage = "Token 长度应为 4-128 个字符")]
     public string? AccessToken { get; set; }
+
+    [JsonPropertyName("username")]
+    [Display(Name = "管理员用户名")]
+    [StringLength(32, MinimumLength = 1, ErrorMessage = "用户名长度应为 1-32 个字符")]
+    public string? Username { get; set; }
+
+    [JsonPropertyName("passwordHash")]
+    public string? PasswordHash { get; set; }
+
+    /// <summary>仅引导用：passwordHash 为空且存在明文 password 时，首次读取自动哈希化并清除明文。</summary>
+    [JsonPropertyName("password")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Password { get; set; }
 
     [JsonPropertyName("cacheMinutes")]
     [Display(Name = "缓存时长 (分钟)")]

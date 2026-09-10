@@ -1,9 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using ClashServer.Models;
 using ClashServer.Models.Dtos;
 using ClashServer.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ClashServer.Web;
@@ -41,13 +44,40 @@ public static class ApiEndpoints
             if (badJson || req == null)
                 return Results.Json(ApiResponse<object>.Failure("请求体无效"), statusCode: 400);
             var settings = await storageGet(ctx.RequestServices);
-            // fail-closed：服务端未配置 Token 时一律拒绝登录
-            if (string.IsNullOrWhiteSpace(settings.AccessToken))
-                return Results.Json(ApiResponse<object>.Failure("登录失败：服务器未配置 accessToken"), statusCode: 401);
-            if (!AuthSetup.TokenMatches(req?.AccessToken ?? string.Empty, settings.AccessToken))
-                return Results.Json(ApiResponse<object>.Failure("登录失败：Token 无效"), statusCode: 401);
+            // fail-closed：未配置管理员账号时一律拒绝登录
+            if (string.IsNullOrWhiteSpace(settings.Username) || string.IsNullOrWhiteSpace(settings.PasswordHash))
+                return Results.Json(ApiResponse<object>.Failure("登录失败：服务器未配置管理员账号"), statusCode: 401);
 
-            var principal = AuthSetup.BuildPrincipal(settings.AccessToken);
+            // 简单限速：同一来源(IP)连续失败 5 次锁定 30 秒
+            var cache = ctx.RequestServices.GetRequiredService<IMemoryCache>();
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var lockKey = $"login-lock:{ip}";
+            var failKey = $"login-fail:{ip}";
+            if (cache.TryGetValue(lockKey, out _))
+                return Results.Json(ApiResponse<object>.Failure("尝试次数过多，请稍后重试"), statusCode: 429);
+
+            var usernameOk = !string.IsNullOrWhiteSpace(req.Username)
+                && CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(req.Username.Trim()),
+                    Encoding.UTF8.GetBytes(settings.Username));
+            var passwordOk = AuthSetup.VerifyPassword(req.Password ?? string.Empty, settings.PasswordHash);
+
+            if (!usernameOk || !passwordOk)
+            {
+                // 统一文案，不区分具体原因，防用户名枚举
+                var fails = 1;
+                if (cache.TryGetValue(failKey, out int current)) fails = current + 1;
+                cache.Set(failKey, fails, TimeSpan.FromMinutes(5));
+                if (fails >= 5)
+                {
+                    cache.Remove(failKey);
+                    cache.Set(lockKey, true, TimeSpan.FromSeconds(30));
+                }
+                return Results.Json(ApiResponse<object>.Failure("登录失败：用户名或密码错误"), statusCode: 401);
+            }
+
+            cache.Remove(failKey);
+            var principal = AuthSetup.BuildPrincipal(settings.Username, settings.PasswordHash);
             await ctx.SignInAsync(principal, new AuthenticationProperties
             {
                 IsPersistent = true,
@@ -224,10 +254,13 @@ public static class ApiEndpoints
 
         g.MapPut("/settings", async ([FromBody] SettingsDto dto, IStorageService storage, IClashSubService sub) =>
         {
+            var existing = await storage.GetSettingsAsync();
             var settings = new AppSettings
             {
                 UpstreamUrl = dto.UpstreamUrl,
                 AccessToken = dto.AccessToken,
+                Username = string.IsNullOrWhiteSpace(dto.Username) ? existing.Username : dto.Username.Trim(),
+                PasswordHash = existing.PasswordHash, // 密码不走通用保存，仅通过 /api/settings/password 修改
                 CacheMinutes = dto.CacheMinutes,
                 AdminFetchTimeoutSeconds = dto.AdminFetchTimeoutSeconds,
                 PublicSubFetchTimeoutSeconds = dto.PublicSubFetchTimeoutSeconds,
@@ -239,6 +272,31 @@ public static class ApiEndpoints
             await storage.SaveSettingsAsync(settings);
             sub.ClearCache();
             return Results.Ok(ApiResponse<SettingsDto>.Success(SettingsDto.From(settings)));
+        });
+
+        g.MapPost("/settings/password", async ([FromBody] ChangePasswordRequest req, IStorageService storage, HttpContext ctx) =>
+        {
+            var settings = await storage.GetSettingsAsync();
+            if (string.IsNullOrWhiteSpace(settings.Username) || string.IsNullOrWhiteSpace(settings.PasswordHash))
+                return Results.Json(ApiResponse<object>.Failure("服务器未配置管理员账号"), statusCode: 401);
+            if (string.IsNullOrWhiteSpace(req?.CurrentPassword) || !AuthSetup.VerifyPassword(req.CurrentPassword, settings.PasswordHash))
+                return Results.Json(ApiResponse<object>.Failure("当前密码错误"), statusCode: 400);
+            if (string.IsNullOrWhiteSpace(req?.NewPassword) || req.NewPassword.Length < 8 || req.NewPassword.Length > 64)
+                return Results.Json(ApiResponse<object>.Failure("新密码长度应为 8-64 个字符"), statusCode: 400);
+
+            settings.PasswordHash = AuthSetup.HashPassword(req.NewPassword);
+            await storage.SaveSettingsAsync(settings);
+
+            // 用新凭据摘要重新签发当前会话 Cookie（改密者不掉线），其他会话下一次请求自动 401
+            if (ctx.User.Identity?.IsAuthenticated == true)
+            {
+                await ctx.SignInAsync(AuthSetup.BuildPrincipal(settings.Username, settings.PasswordHash), new AuthenticationProperties
+                {
+                    IsPersistent = true,
+                    ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(30)
+                });
+            }
+            return Results.Ok(ApiResponse<object>.Success(new { changed = true }));
         });
 
         g.MapPost("/settings/generate-token", () =>
@@ -513,7 +571,14 @@ public class ParseRequest
 
 public class LoginRequest
 {
-    public string? AccessToken { get; set; }
+    public string? Username { get; set; }
+    public string? Password { get; set; }
+}
+
+public class ChangePasswordRequest
+{
+    public string? CurrentPassword { get; set; }
+    public string? NewPassword { get; set; }
 }
 
 public class ImportRequest

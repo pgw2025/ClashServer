@@ -2,8 +2,8 @@ import http, { unwrap } from './http'
 import type { ApiResponse, DashboardDto, RuleDto, SettingsDto, ConfigDto, ProxyNode } from '@/types'
 
 export const authApi = {
-  login: (accessToken: string) =>
-    unwrap(http.post<ApiResponse<unknown>>('/api/auth/login', { accessToken })),
+  login: (username: string, password: string) =>
+    unwrap(http.post<ApiResponse<unknown>>('/api/auth/login', { username, password })),
   logout: () => unwrap(http.post<ApiResponse<unknown>>('/api/auth/logout')),
   status: () => unwrap(http.get<ApiResponse<{ loggedIn: boolean }>>('/api/auth/status'))
 }
@@ -37,6 +37,8 @@ export const rulesApi = {
 export const settingsApi = {
   get: () => unwrap(http.get<ApiResponse<SettingsDto>>('/api/settings')),
   save: (dto: Partial<SettingsDto>) => unwrap(http.put<ApiResponse<SettingsDto>>('/api/settings', dto)),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    unwrap(http.post<ApiResponse<unknown>>('/api/settings/password', { currentPassword, newPassword })),
   generateToken: () => unwrap(http.post<ApiResponse<{ token: string }>>('/api/settings/generate-token'))
 }
 

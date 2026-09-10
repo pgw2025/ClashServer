@@ -12,12 +12,18 @@
       </div>
 
       <div class="field">
-        <label>访问 Token</label>
+        <label>订阅 Token</label>
         <div class="token-row">
           <input v-model.trim="form.accessToken" type="password" />
           <button type="button" class="btn" @click="generateToken">生成 Token</button>
         </div>
-        <p class="hint">用于管理端登录与订阅鉴权（如配置，则订阅需携带 token）。生成后需点「保存」才会生效。</p>
+        <p class="hint">仅用于客户端订阅鉴权（/sub 端点），管理端登录请使用下方用户名密码。</p>
+      </div>
+
+      <div class="field">
+        <label>管理员用户名</label>
+        <input v-model.trim="form.username" autocomplete="username" placeholder="登录用户名" />
+        <p class="hint">管理端登录用户名；修改后所有已登录会话将失效，需重新登录。</p>
       </div>
 
       <div class="grid">
@@ -54,6 +60,29 @@
       </div>
     </form>
   </div>
+
+  <div class="card" v-if="loaded">
+    <h2>修改密码</h2>
+    <form @submit.prevent="changePassword">
+      <div class="field">
+        <label>当前密码</label>
+        <input v-model="pwd.currentPassword" type="password" autocomplete="current-password" required />
+      </div>
+      <div class="field">
+        <label>新密码（8-64 位）</label>
+        <input v-model="pwd.newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="64" required />
+      </div>
+      <div class="field">
+        <label>确认新密码</label>
+        <input v-model="pwd.confirmPassword" type="password" autocomplete="new-password" required />
+      </div>
+      <p v-if="pwdError" class="danger-text">{{ pwdError }}</p>
+      <div class="actions">
+        <button type="submit" class="btn primary" :disabled="pwdSaving">{{ pwdSaving ? '修改中…' : '修改密码' }}</button>
+        <span v-if="pwdOk" class="muted">修改成功，其他登录会话已下线</span>
+      </div>
+    </form>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -69,6 +98,7 @@ const saveError = ref('')
 const form = reactive({
   upstreamUrl: '',
   accessToken: '',
+  username: '',
   cacheMinutes: 15,
   adminFetchTimeoutSeconds: 5,
   publicSubFetchTimeoutSeconds: 10,
@@ -76,6 +106,11 @@ const form = reactive({
   replaceMode: false,
   autoGroupNodes: true
 })
+
+const pwd = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
+const pwdSaving = ref(false)
+const pwdError = ref('')
+const pwdOk = ref(false)
 
 async function reload() {
   loaded.value = false
@@ -85,6 +120,7 @@ async function reload() {
   if (d) {
     form.upstreamUrl = d.upstreamUrl ?? ''
     form.accessToken = d.accessToken ?? ''
+    form.username = d.username ?? ''
     form.cacheMinutes = d.cacheMinutes
     form.adminFetchTimeoutSeconds = d.adminFetchTimeoutSeconds
     form.publicSubFetchTimeoutSeconds = d.publicSubFetchTimeoutSeconds
@@ -101,6 +137,7 @@ async function save() {
   const dto = {
     upstreamUrl: form.upstreamUrl || null,
     accessToken: form.accessToken || null,
+    username: form.username || null,
     cacheMinutes: form.cacheMinutes,
     adminFetchTimeoutSeconds: form.adminFetchTimeoutSeconds,
     publicSubFetchTimeoutSeconds: form.publicSubFetchTimeoutSeconds,
@@ -117,6 +154,34 @@ async function save() {
     saveError.value = (err as any)?.response?.data?.error ?? '保存失败'
   } finally {
     saving.value = false
+  }
+}
+
+async function changePassword() {
+  pwdError.value = ''
+  pwdOk.value = false
+  if (pwd.newPassword !== pwd.confirmPassword) {
+    pwdError.value = '两次输入的新密码不一致'
+    return
+  }
+  if (pwd.newPassword.length < 8) {
+    pwdError.value = '新密码至少 8 位'
+    return
+  }
+  pwdSaving.value = true
+  try {
+    const res = await settingsApi.changePassword(pwd.currentPassword, pwd.newPassword)
+    if (!res.ok) { pwdError.value = res.error ?? '修改失败' }
+    else {
+      pwdOk.value = true
+      pwd.currentPassword = ''
+      pwd.newPassword = ''
+      pwd.confirmPassword = ''
+    }
+  } catch (err) {
+    pwdError.value = (err as any)?.response?.data?.error ?? '修改失败'
+  } finally {
+    pwdSaving.value = false
   }
 }
 

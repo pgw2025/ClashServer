@@ -73,6 +73,9 @@ public class SettingsDto
     [JsonPropertyName("accessToken")]
     public string? AccessToken { get; set; }
 
+    [JsonPropertyName("username")]
+    public string? Username { get; set; }
+
     [JsonPropertyName("cacheMinutes")]
     public int CacheMinutes { get; set; }
 
@@ -99,6 +102,7 @@ public class SettingsDto
         {
             UpstreamUrl = s.UpstreamUrl,
             AccessToken = s.AccessToken,
+            Username = s.Username,
             CacheMinutes = s.CacheMinutes,
             AdminFetchTimeoutSeconds = s.AdminFetchTimeoutSeconds,
             PublicSubFetchTimeoutSeconds = s.PublicSubFetchTimeoutSeconds,

@@ -26,15 +26,16 @@
 
 | 决策点 | 结论 |
 |---|---|
-| 管理端鉴权 | **新增管理端登录**（复用现有 `accessToken`，Cookie 会话） |
+| 管理端鉴权 | **用户名密码登录**（PBKDF2 加盐哈希存储），Cookie 会话；`accessToken` **仅保留给 `/sub` 订阅鉴权** |
 | 本期范围 | **仅产出方案文档**，不改代码 |
 | 部署形态 | **后端托管 Vue 构建产物**（同源、单端口、无 CORS） |
 | 业务服务层 | `Services/` 三层**原样保留复用**，不重写 |
 | `/sub` 端点 | 原样保留，**不并入登录体系**；`content-type` 保持现状 |
 | 鉴权粒度 | **仅保护 `/api/*`**（白名单除外）；SPA 壳与前端路由公开，登录跳转由 Vue Router 守卫完成（详见卷 03） |
 | CSRF 防护 | Cookie `SameSite=Lax` + 写操作要求自定义头 `X-Requested-With: fetch`（详见卷 03） |
-| 空 Token 语义 | 管理端登录 **fail-closed**：`accessToken` 为空一律拒绝（空 Token 放行仅适用于 `/sub`） |
-| 会话有效性 | Cookie 会话与 `accessToken` 绑定，Token 轮换后旧会话自动失效 |
+| 空凭据语义 | 管理端登录 **fail-closed**：未配置用户名/密码一律拒绝；空 `accessToken` 放行仅适用于 `/sub` |
+| 会话有效性 | Cookie 会话与凭据摘要（用户名\|密码哈希）绑定，**改密/改名后旧会话自动失效** |
+| 登录加固 | 固定时间比较防时序侧信道；同来源连续失败 5 次锁定 30 秒；失败文案统一防用户名枚举 |
 | 实施单元 | 阶段 1+2 **同一分支连续实施、合并为同一发布单元**（禁止无鉴权中间态上线） |
 
 ## 3. 阶段与步骤总表
@@ -68,7 +69,7 @@
 | R5 | 列表接口响应需携带 `lastGoodUpdate`/`isStale`，供前端渲染 stale 警告 | **本次改造新增约束** |
 | R6 | `/sub` 面向 Clash 客户端，`content-type` 不改、不走登录 | 后端 |
 | R7 | 前端首屏不得被抓取阻塞（先渲染缓存/占位，数据异步到达） | Vue 页面组件 |
-| R8 | 管理端鉴权 **fail-closed**：空 `accessToken` 拒绝登录；`/api/*` 全量受保护（白名单除外）；Cookie `SameSite=Lax` + 写操作自定义头防 CSRF；Token 轮换后旧会话失效 | 后端认证 + 前端 api 模块 |
+| R8 | 管理端鉴权 **fail-closed**：未配置用户名/密码拒绝登录；`/api/*` 全量受保护（白名单除外）；Cookie `SameSite=Lax` + 写操作自定义头防 CSRF；改密/改名后旧会话失效；登录限速（同来源失败 5 次锁 30 秒） | 后端认证 + 前端 api 模块 |
 
 ## 5. 通用约定
 
@@ -90,3 +91,4 @@
 |---|---|---|
 | v1 | 2026-09-10 | 初稿（9 卷） |
 | v2 | 2026-09-10 | 评审修订 12 处：①CSRF 防护 ②鉴权粒度改为仅保护 `/api/*` ③空 Token fail-closed ④Token 轮换会话失效 ⑤节点测速改 body 传参 ⑥Razor/SPA 模式互斥红线 ⑦fallback 排除 `/api` ⑧状态码口径统一（503 仅探活） ⑨交叉引用修正（卷 05/06） ⑩仪表盘补全部测速（限并发）与延时排序 ⑪stale 判定后端统一收敛 ⑫阶段 1+2 同发布单元；另补：DTO 时间字段用 `DateTimeOffset`、`/api/*` JSON 异常处理、登录端点加固、分支策略、开发期 Cookie 说明简化。本卷自 v2 起完整重建一次。 |
+| v3 | 2026-09-10 | **管理端鉴权改为用户名密码**：凭据源从 `accessToken` 换成 `username`+`passwordHash`（PBKDF2 加盐，格式 `pbkdf2-sha256$iter$salt$hash`）；`accessToken` 仅保留给 `/sub`；会话绑定改为凭据摘要（改密/改名失效）；补登录限速实现（同来源失败 5 次锁 30 秒）；新增 `/api/settings/password` 改密端点（改密者重签会话不掉线）；settings.json 支持一次性明文 `password` 引导字段（首读自动哈希化）；设置页「访问 Token」改名「订阅 Token」。R8 相应更新。 |

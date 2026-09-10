@@ -3,8 +3,10 @@
     <div class="card login-card">
       <h2>Clash Server 管理端</h2>
       <form @submit.prevent="onSubmit">
-        <label>访问 Token</label>
-        <input v-model="token" type="password" autocomplete="current-password" placeholder="请输入 accessToken" required />
+        <label>用户名</label>
+        <input v-model.trim="username" type="text" autocomplete="username" placeholder="请输入用户名" required />
+        <label>密码</label>
+        <input v-model="password" type="password" autocomplete="current-password" placeholder="请输入密码" required />
         <button class="btn primary" :disabled="loading">{{ loading ? '登录中…' : '登录' }}</button>
       </form>
       <p v-if="error" class="danger-text">{{ error }}</p>
@@ -17,7 +19,8 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-const token = ref('')
+const username = ref('')
+const password = ref('')
 const loading = ref(false)
 const error = ref('')
 const auth = useAuthStore()
@@ -28,7 +31,7 @@ async function onSubmit() {
   error.value = ''
   loading.value = true
   try {
-    await auth.login(token.value)
+    await auth.login(username.value, password.value)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     router.push(redirect)
   } catch (e: any) {

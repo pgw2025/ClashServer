@@ -21,6 +21,7 @@ export interface RuleDto {
 export interface SettingsDto {
   upstreamUrl: string | null
   accessToken: string | null
+  username: string | null
   cacheMinutes: number
   adminFetchTimeoutSeconds: number
   publicSubFetchTimeoutSeconds: number

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ClashServer.Models;
+using ClashServer.Web;
 
 namespace ClashServer.Services;
 
@@ -69,20 +70,39 @@ public class StorageService : IStorageService
         await _settingsLock.WaitAsync();
         try
         {
+            AppSettings settings;
             if (!File.Exists(_settingsPath))
             {
-                return new AppSettings
+                settings = new AppSettings
+                {
+                    AccessToken = Guid.NewGuid().ToString("N")[..16]
+                };
+            }
+            else
+            {
+                using var stream = new FileStream(_settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
+                var result = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions);
+                settings = result ?? new AppSettings
                 {
                     AccessToken = Guid.NewGuid().ToString("N")[..16]
                 };
             }
 
-            using var stream = new FileStream(_settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
-            var result = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions);
-            return result ?? new AppSettings
+            // 引导：passwordHash 为空且存在明文 password 时，首次读取自动哈希化并清除明文（幂等）。
+            // 锁已持有，直接落盘，避免 SaveSettingsAsync 重入死锁。
+            if (string.IsNullOrWhiteSpace(settings.PasswordHash)
+                && !string.IsNullOrWhiteSpace(settings.Username)
+                && !string.IsNullOrWhiteSpace(settings.Password))
             {
-                AccessToken = Guid.NewGuid().ToString("N")[..16]
-            };
+                settings.PasswordHash = AuthSetup.HashPassword(settings.Password);
+                settings.Password = null;
+                settings.UpdatedAt = DateTime.Now;
+                using var write = new FileStream(_settingsPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true);
+                await JsonSerializer.SerializeAsync(write, settings, JsonOptions);
+                await write.FlushAsync();
+            }
+
+            return settings;
         }
         finally
         {
