@@ -66,10 +66,12 @@ app.MapGet("/sub", async (HttpContext context, IClashSubService subService, ISto
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "/sub 端点处理请求时出错");
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        context.Response.ContentType = "text/plain; charset=utf-8";
-        await context.Response.WriteAsync($"Error: {ex.Message}", Encoding.UTF8);
+        // R2：上游不可达（含冷启动无 last-good）也必须在 10s 内返回且带 stale 降级，绝不放任 500
+        logger.LogError(ex, "/sub 端点处理请求时出错，返回 stale 降级");
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.Headers["X-Cache"] = "stale";
+        context.Response.ContentType = "text/html; charset=UTF-8";
+        await context.Response.WriteAsync("# 上游订阅不可达，请稍后刷新重试。\n", Encoding.UTF8);
     }
 });
 

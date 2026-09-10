@@ -254,9 +254,18 @@ public static class ApiEndpoints
         {
             var settings = await storage.GetSettingsAsync();
             var timeout = TimeSpan.FromSeconds(settings.AdminFetchTimeoutSeconds > 0 ? settings.AdminFetchTimeoutSeconds : 5);
-            var yaml = await sub.GetRawUpstreamYamlAsync(ct: ctx.RequestAborted, fetchTimeout: timeout);
-            var dto = BuildConfigDto(yaml, sub, settings);
-            return Results.Ok(ApiResponse<ConfigDto>.Success(dto, dto.LastGoodUpdate, dto.IsStale));
+            var stale = ComputeStale(sub, settings);
+            try
+            {
+                var yaml = await sub.GetRawUpstreamYamlAsync(ct: ctx.RequestAborted, fetchTimeout: timeout);
+                var dto = BuildConfigDto(yaml, sub, settings);
+                return Results.Ok(ApiResponse<ConfigDto>.Success(dto, dto.LastGoodUpdate, dto.IsStale));
+            }
+            catch
+            {
+                // R1：冷启动且上游失败时返回空配置并标记 stale，绝不放任 500
+                return Results.Ok(ApiResponse<ConfigDto>.Success(BuildConfigDto(string.Empty, sub, settings), stale.LastGood, true));
+            }
         });
 
         g.MapGet("/config/merged", async (IClashSubService sub, IStorageService storage, HttpContext ctx) =>
@@ -264,9 +273,19 @@ public static class ApiEndpoints
             var settings = await storage.GetSettingsAsync();
             var timeout = TimeSpan.FromSeconds(settings.AdminFetchTimeoutSeconds > 0 ? settings.AdminFetchTimeoutSeconds : 5);
             var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
-            var yaml = await sub.GetMergedSubAsync(baseUrl, ct: ctx.RequestAborted, fetchTimeout: timeout);
-            var dto = BuildConfigDto(yaml, sub, settings);
-            return Results.Ok(ApiResponse<ConfigDto>.Success(dto, dto.LastGoodUpdate, dto.IsStale));
+            var stale = ComputeStale(sub, settings);
+            try
+            {
+                // 用 Safe 版本：有 last-good 时自动降级；冷启动无快照则下方 catch 兜底为空配置
+                var r = await sub.GetMergedSubSafeAsync(baseUrl, ct: ctx.RequestAborted, fetchTimeout: timeout);
+                var dto = BuildConfigDto(r.Yaml, sub, settings);
+                return Results.Ok(ApiResponse<ConfigDto>.Success(dto, dto.LastGoodUpdate, dto.IsStale));
+            }
+            catch
+            {
+                // R1：冷启动且上游失败时返回空配置并标记 stale，绝不放任 500
+                return Results.Ok(ApiResponse<ConfigDto>.Success(BuildConfigDto(string.Empty, sub, settings), stale.LastGood, true));
+            }
         });
 
         g.MapPost("/config/refresh", async (IClashSubService sub, HttpContext ctx) =>
@@ -299,9 +318,13 @@ public static class ApiEndpoints
                 var stale = ComputeStale(sub, settings);
                 return Results.Ok(ApiResponse<List<ProxyNode>>.Success(nodes, stale.LastGood, stale.IsStale));
             }
-            catch (Exception ex)
+            catch
             {
-                return Results.Json(ApiResponse<List<ProxyNode>>.Failure(ex.Message), statusCode: 500);
+                // R1：上游不可达时不抛 500，回退到内存缓存（无数据则空数组），附 stale 元数据
+                var cached = sub.GetCachedNodes() ?? new List<ProxyNode>();
+                var settings = await storage.GetSettingsAsync();
+                var stale = ComputeStale(sub, settings);
+                return Results.Ok(ApiResponse<List<ProxyNode>>.Success(cached, stale.LastGood, true));
             }
         });
 
@@ -315,9 +338,13 @@ public static class ApiEndpoints
                 var stale = ComputeStale(sub, settings);
                 return Results.Ok(ApiResponse<List<string>>.Success(groups, stale.LastGood, stale.IsStale));
             }
-            catch (Exception ex)
+            catch
             {
-                return Results.Json(ApiResponse<List<string>>.Failure(ex.Message), statusCode: 500);
+                // R1：上游不可达时回退缓存，group 名无缓存则空数组
+                var cached = sub.GetCachedGroups() ?? new List<string>();
+                var settings = await storage.GetSettingsAsync();
+                var stale = ComputeStale(sub, settings);
+                return Results.Ok(ApiResponse<List<string>>.Success(cached, stale.LastGood, true));
             }
         });
 
