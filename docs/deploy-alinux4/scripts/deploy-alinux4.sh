@@ -20,6 +20,7 @@ while [ $# -gt 0 ]; do
         --domain) DOMAIN="$2"; shift 2 ;;
         --self-contained) SELF_CONTAINED=1; shift ;;
         --remote-dir) REMOTE_DIR="$2"; shift 2 ;;
+        --https-port) HTTPS_PORT="${2:-2130}"; shift 2 ;;
         *) echo "[错误] 未知参数: $1"; exit 1 ;;
     esac
 done
@@ -122,85 +123,77 @@ EOF
 echo "[步骤 5/6] 配置 Nginx"
 command -v nginx >/dev/null 2>&1 || dnf install -y nginx
 rm -f /etc/nginx/conf.d/default.conf
-CERT="/etc/nginx/certs/fullchain.pem"
-KEY="/etc/nginx/certs/privkey.pem"
+HTTPS_PORT="${HTTPS_PORT:-2130}"
+CERT="/etc/nginx/ssl/fullchain.crt"
+KEY="/etc/nginx/ssl/private.key"
 HAS_CERT=0
 [ -f "$CERT" ] && [ -f "$KEY" ] && HAS_CERT=1
 SERVER_NAME="${DOMAIN:-_}"
+PROXY_BLOCK="    location /sub {
+        access_log off;
+        proxy_pass http://$BIND:$PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 60s;
+    }
+    location / {
+        proxy_pass http://$BIND:$PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 60s;
+    }"
 
 if [ "$HAS_CERT" -eq 1 ]; then
 cat > /etc/nginx/conf.d/clashserver.conf <<EOF
 server {
     listen 80;
     server_name $SERVER_NAME;
-    return 301 https://\$host\$request_uri;
+    return 301 https://\$host:${HTTPS_PORT}\$request_uri;
 }
 server {
-    listen 443 ssl;
-    http2 on;
+    listen $HTTPS_PORT ssl;
+    listen [::]:$HTTPS_PORT ssl;
     server_name $SERVER_NAME;
-    ssl_certificate     $CERT;
+    charset utf-8;
+
+    ssl_certificate $CERT;
     ssl_certificate_key $KEY;
-    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
     client_max_body_size 10m;
-    location /sub {
-        access_log off;
-        proxy_pass http://$BIND:$PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
-    }
-    location / {
-        proxy_pass http://$BIND:$PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
-    }
+$PROXY_BLOCK
 }
 EOF
-    echo "          HTTPS 已启用（证书: $CERT）"
+    echo "          HTTPS 已启用（$HTTPS_PORT，证书: $CERT）"
 else
 cat > /etc/nginx/conf.d/clashserver.conf <<EOF
 server {
     listen 80;
     server_name $SERVER_NAME;
     client_max_body_size 10m;
-    location /sub {
-        access_log off;
-        proxy_pass http://$BIND:$PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
-    }
-    location / {
-        proxy_pass http://$BIND:$PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
-    }
+$PROXY_BLOCK
 }
 EOF
     echo "          [提示] 未检测到证书，当前仅 HTTP(:80)。"
-    echo "                 申请证书放入 /etc/nginx/certs/ 后重跑本脚本即可启用 HTTPS。"
+    echo "                 申请证书放入 /etc/nginx/ssl/（fullchain.crt、private.key）后重跑本脚本即可启用 HTTPS:$HTTPS_PORT。"
 fi
 
 # ---- 6. 防火墙 + 启动 + 验证 ----
 echo "[步骤 6/6] 防火墙与启动"
 if systemctl is-active --quiet firewalld; then
     firewall-cmd --permanent --add-service=http >/dev/null 2>&1 || true
-    firewall-cmd --permanent --add-service=https >/dev/null 2>&1 || true
+    firewall-cmd --permanent --add-port=$HTTPS_PORT/tcp >/dev/null 2>&1 || true
     firewall-cmd --reload >/dev/null 2>&1 || true
-    echo "          firewalld 已放行 80/443"
+    echo "          firewalld 已放行 80 与 $HTTPS_PORT"
 else
-    echo "          [提示] firewalld 未运行，请确认阿里云安全组已放行 80/443"
+    echo "          [提示] firewalld 未运行，请确认阿里云安全组已放行 80 与 $HTTPS_PORT"
 fi
 
 systemctl daemon-reload
@@ -228,8 +221,8 @@ echo "=============================================="
 echo "  ClashServer 部署完成 ✔"
 echo "  本机探测 : http://127.0.0.1:$PORT  (200)"
 if [ "$HAS_CERT" -eq 1 ]; then
-    echo "  管理页面 : https://${DOMAIN:-<公网IP>}/"
-    echo "  订阅链接 : https://${DOMAIN:-<公网IP>}/sub?token=<你的token>"
+    echo "  管理页面 : https://${DOMAIN:-<公网IP>}:$HTTPS_PORT/"
+    echo "  订阅链接 : https://${DOMAIN:-<公网IP>}:$HTTPS_PORT/sub?token=<你的token>"
 else
     echo "  管理页面 : http://<公网IP>/   （建议尽快配置 HTTPS 证书）"
     echo "  订阅链接 : http://<公网IP>/sub?token=<你的token>"

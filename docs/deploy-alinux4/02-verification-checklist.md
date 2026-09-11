@@ -21,12 +21,12 @@
 | 6 | 订阅端点（带 token） | `curl -s "http://127.0.0.1:5080/sub?token=<token>" \| head -30` | 返回 Clash YAML：`proxies:`、`rules:` 等段落 |
 | 7 | 订阅无 token（应拒） | `curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5080/sub` | `401`（设置了 access token 时） |
 | 8 | 管理 API 鉴权 | `curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5080/api/rules` | `401`（Vue 模式未登录） |
-| 9 | 公网 HTTPS 首页 | 浏览器或 `curl -s -o /dev/null -w "%{http_code}\n" https://your.domain.com/` | `200` |
-| 10 | 公网 HTTPS 订阅 | `curl -s "https://your.domain.com/sub?token=<token>" \| head -30` | 返回 YAML |
-| 11 | HTTP 跳转 | `curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" http://your.domain.com/sub?token=x` | `301` 到 https |
-| 12 | 管理页面登录 | 浏览器打开 `https://your.domain.com` → 登录页 → 输入用户名密码 | 进入仪表盘，规则/节点/设置页可用 |
+| 9 | 公网 HTTPS 首页 | 浏览器或 `curl -sk -o /dev/null -w "%{http_code}\n" https://<公网IP>:2130/` | `200` |
+| 10 | 公网 HTTPS 订阅 | `curl -sk "https://<公网IP>:2130/sub?token=<token>" \| head -30` | 返回 YAML |
+| 11 | HTTP 跳转 | `curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" http://<公网IP>/sub?token=x` | `301` 到 https 且带 `:2130` |
+| 12 | 管理页面登录 | 浏览器打开 `https://<公网IP>:2130` → 登录页 → 输入用户名密码 | 进入仪表盘，规则/节点/设置页可用 |
 | 13 | 首次配置 | 设置页填上游 URL + token 并保存 | 保存成功；`/opt/clashserver/Data/settings.json` 生成 |
-| 14 | 上游健康检查 | `curl -s -o /dev/null -w "%{http_code}\n" https://your.domain.com/api/sub-health` | `200`（上游可达）或 `503`（上游不可达，属正常降级） |
+| 14 | 上游健康检查 | `curl -sk -o /dev/null -w "%{http_code}\n" https://<公网IP>:2130/api/sub-health` | `200`（上游可达）或 `503`（上游不可达，属正常降级） |
 
 ### 1.3 容灾与行为验证
 
@@ -48,8 +48,8 @@
 | `/sub` 返回 `Unauthorized` | token 不对 | 用设置页里配置的 access token；URL 编码特殊字符 |
 | `/sub` 一直返回 stale 旧数据 | 上游不可达（国内 ECS 直连海外订阅源失败） | 本机/服务器 `curl -I <上游URL>` 测试；见 00 号文档"网络可达性"对策 |
 | 管理页"节点延迟"全红/超时 | ECS 出方向 ICMP 或目标节点不响应 | 不影响订阅功能，属预期；延迟测试仅管理页展示用 |
-| HTTPS 证书不生效 | 域名未解析 / 证书路径错 | `curl -v https://your.domain.com` 看握手；`nginx -t`；确认 DNS A 记录指向 ECS 公网 IP |
-| 80 端口从公网不通 | 安全组未放行 | 阿里云控制台 ECS 安全组入方向放行 80/443；确认实例内 firewalld 未拦截 |
+| HTTPS 证书不生效 | 域名未解析 / 证书路径错 | `curl -vk https://<公网IP>:2130` 看握手；`nginx -t`；确认 `/etc/nginx/ssl/fullchain.crt` 存在、安全组已放行 2130 |
+| 80 端口从公网不通 | 安全组未放行 | 阿里云控制台 ECS 安全组入方向放行 80 与 2130；确认实例内 firewalld 未拦截 |
 
 ## 3. 数据备份建议
 

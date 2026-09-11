@@ -18,6 +18,7 @@ param(
     [switch]$SelfContained,
     [string]$RemoteUser = 'root',
     [string]$RemoteDir = '/opt/clashserver',
+    [string]$HttpsPort = '2130',
     [switch]$SkipBuild,
     [switch]$SkipDeploy
 )
@@ -100,6 +101,7 @@ if (-not $SkipDeploy) {
     $extra = @()
     if ($Domain) { $extra += "--domain $Domain" }
     if ($SelfContained) { $extra += '--self-contained' }
+    $extra += "--https-port $HttpsPort"
     $extra += "--remote-dir $RemoteDir"
     $sudoPrefix = if ($RemoteUser -eq 'root') { '' } else { 'sudo ' }
     ssh "$RemoteUser@$ServerIp" "$sudoPrefix bash /tmp/deploy-alinux4.sh $($extra -join ' ')"

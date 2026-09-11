@@ -3,9 +3,9 @@
 > 目标拓扑：
 > ```
 > Clash 客户端 ──HTTPS──> 阿里云 ECS (Alibaba Cloud Linux 4)
->                           └─ Nginx :80/:443 ──HTTP──> Kestrel :127.0.0.1:5080
->                                                         ├─ wwwroot/   (Vue 产物，后端托管)
->                                                         └─ Data/      (JSON 数据)
+>                         └─ Nginx :80 / :2130 ──HTTP──> Kestrel :127.0.0.1:5080
+>                                                          ├─ wwwroot/   (Vue 产物，后端托管)
+>                                                          └─ Data/      (JSON 数据)
 > ```
 
 ## 前置条件
@@ -153,8 +153,8 @@ sudo dnf install -y nginx
 2. 上传到服务器：
 
 ```bash
-sudo mkdir -p /etc/nginx/certs
-# 把 .pem / .key 放到 /etc/nginx/certs/，例如 fullchain.pem、privkey.pem
+sudo mkdir -p /etc/nginx/ssl
+# 把证书/私钥放到 /etc/nginx/ssl/，命名为 fullchain.crt、private.key
 ```
 
 **方式二：Let's Encrypt（certbot）**
@@ -165,26 +165,34 @@ sudo dnf install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d your.domain.com --redirect
 ```
 
+> **本机 HTTPS 端口固定为 `2130`**。证书就绪后执行 `nginx -t && systemctl reload nginx` 即可生效，无需重新部署。
+
 ### 5.3 Nginx 配置
 
-创建 `/etc/nginx/conf.d/clashserver.conf`：
+创建 `/etc/nginx/conf.d/clashserver.conf`（已按本机要求使用 2130 端口 + `/etc/nginx/ssl/` 证书）：
 
 ```nginx
 # HTTP → HTTPS
 server {
     listen 80;
-    server_name your.domain.com;
-    return 301 https://$host$request_uri;
+    server_name 101.200.235.216;
+    return 301 https://$host:2130$request_uri;
 }
 
 server {
-    listen 443 ssl;
-    http2 on;
-    server_name your.domain.com;
+    listen 2130 ssl;
+    listen [::]:2130 ssl; # 如果支持 IPv6
+    server_name 101.200.235.216;
+    charset utf-8;
 
-    ssl_certificate     /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
+    # 证书和私钥的路径
+    ssl_certificate /etc/nginx/ssl/fullchain.crt;
+    ssl_certificate_key /etc/nginx/ssl/private.key;
+
+    # 推荐的安全配置（提高 SSL 评级）
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
 
     client_max_body_size 10m;
 
@@ -222,14 +230,15 @@ sudo systemctl reload nginx
 
 **阿里云控制台（必须做）：**
 
-- ECS 安全组 → 入方向放行：`80`、`443`。
+- ECS 安全组 → 入方向放行：`80`、**`2130`**（不是 443）。
 - 建议：`22` 改为"指定源 IP"（你的办公网 IP），或至少使用密钥登录。
 
 **实例内 firewalld（可选，若启用）：**
 
 ```bash
 sudo systemctl enable --now firewalld
-sudo firewall-cmd --permanent --add-service={http,https}
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-port=2130/tcp
 sudo firewall-cmd --reload
 ```
 
@@ -258,8 +267,8 @@ ls -l /opt/clashserver/Data/
 **一次性准备**：
 
 1. 本机到 ECS 配好 SSH 免密：`ssh-keygen` 生成密钥，将公钥加入服务器 `~/.ssh/authorized_keys`。
-2. HTTPS 证书（可选）：把 `.pem/.key` 放到服务器 `/etc/nginx/certs/`（文件名 `fullchain.pem`、`privkey.pem`）。有证书则自动启用 HTTPS，没有则自动降级为 HTTP 并提示。
-3. 阿里云控制台安全组入方向放行 80/443。
+2. HTTPS 证书（可选）：把 `.crt/.key` 放到服务器 `/etc/nginx/ssl/`（文件名 `fullchain.crt`、`private.key`）。有证书则自动启用 HTTPS:2130，没有则自动降级为 HTTP 并提示。
+3. 阿里云控制台安全组入方向放行 80 与 2130。
 
 **一条命令完成部署**（在项目根目录 PowerShell 执行，IP 换成你的 ECS 公网 IP）：
 
@@ -273,6 +282,9 @@ ls -l /opt/clashserver/Data/
 # 未绑定域名 / 暂无证书：先纯 HTTP 跑通（推荐事后补证书）
 ./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx
 
+# 指定 HTTPS 端口（默认已是 2130，一般不用改）
+./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx -HttpsPort 2130
+
 # 只重新构建打包，不上传（本地检查产物）
 ./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx -SkipDeploy
 
@@ -280,7 +292,7 @@ ls -l /opt/clashserver/Data/
 ./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx -SkipBuild
 ```
 
-> 说明：脚本默认方案 A（框架依赖发布）。想切换方案 B（自包含、云上免装 .NET），加 `-SelfContained` 参数即可，其余不变。
+> 说明：脚本默认方案 A（框架依赖发布）。其中 HTTPS 端口 **默认即为 2130**，证书放 `/etc/nginx/ssl/`；想切换方案 B（自包含、云上免装 .NET），加 `-SelfContained` 参数即可，其余不变。
 
 ---
 
