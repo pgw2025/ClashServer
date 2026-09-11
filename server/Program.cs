@@ -1,6 +1,8 @@
+using System.Net;
 using System.Text;
 using ClashServer.Services;
 using ClashServer.Web;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +15,14 @@ builder.Services.AddHostedService<BackgroundRefreshService>();
 builder.Services.AddManagementAuth();
 
 var app = builder.Build();
+
+// 反代(nginx)场景：信任本机回环代理的 X-Forwarded-Proto/Host，恢复 https 协议与自定义端口(如 2130)
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost,
+    KnownProxies = { IPAddress.Loopback },
+    ForwardLimit = 1
+});
 
 if (!app.Environment.IsDevelopment())
 {

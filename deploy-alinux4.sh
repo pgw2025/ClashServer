@@ -204,7 +204,7 @@ Group=$APP_USER
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ProtectHome=true
+#ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
@@ -220,7 +220,7 @@ SERVER_NAME="${DOMAIN:-_}"
 PROXY_BLOCK="    location /sub {
         access_log off;
         proxy_pass http://$BIND:$PORT;
-        proxy_set_header Host \$host;
+        proxy_set_header Host \$host:\$server_port;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
@@ -228,7 +228,7 @@ PROXY_BLOCK="    location /sub {
     }
     location / {
         proxy_pass http://$BIND:$PORT;
-        proxy_set_header Host \$host;
+        proxy_set_header Host \$host:\$server_port;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
