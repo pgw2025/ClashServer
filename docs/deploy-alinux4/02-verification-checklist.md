@@ -61,4 +61,4 @@ sudo mkdir -p /opt/backup
 (crontab -l 2>/dev/null; echo "30 2 * * * tar czf /opt/backup/clashserver-data-\$(date +\%F).tar.gz -C /opt/clashserver Data") | crontab -
 ```
 
-恢复：解包后 `chown -R clashsvc:clashsvc /opt/clashserver/Data && systemctl restart clashserver`。
+恢复：解包后 `chown -R root:root /opt/clashserver/Data && systemctl restart clashserver`。

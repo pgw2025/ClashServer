@@ -12,22 +12,51 @@
 # ============================================================
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, HelpMessage = 'ECS 公网 IP')]
-    [string]$ServerIp,
-    [string]$Domain = '',
-    [switch]$SelfContained,
-    [string]$RemoteUser = 'root',
-    [string]$RemoteDir = '/opt/clashserver',
-    [string]$HttpsPort = '2130',
     [switch]$SkipBuild,
     [switch]$SkipDeploy
 )
 $ErrorActionPreference = 'Stop'
 
-$root         = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+# ============================================================
+# 交互式输入：逐项提示，回车即采用括号内的默认值
+# ============================================================
+function Read-Default {
+    param(
+        [string]$Prompt,
+        [string]$Default = '',
+        [switch]$Required
+    )
+    if ($Default) { $line = "  $Prompt（默认: $Default）" }
+    else          { $line = "  $Prompt" }
+    $val = Read-Host $line
+    if ([string]::IsNullOrWhiteSpace($val)) { $val = $Default }
+    if ($Required -and [string]::IsNullOrWhiteSpace($val)) {
+        throw "「$Prompt」不能为空"
+    }
+    return $val
+}
+
+Write-Host "`n===== 请按提示依次输入（直接回车采用默认值）=====" -ForegroundColor Cyan
+$ServerIp     = Read-Default -Prompt 'ECS 公网 IP' -Required
+$RemoteUser   = Read-Default -Prompt 'SSH 远程用户' -Default 'root'
+$RemoteDir    = Read-Default -Prompt '集群部署目录（远端）' -Default '/opt/clashserver'
+$answer       = Read-Default -Prompt '是否创建运行用户? [y/N]' -Default '否'
+$CreateUser   = ($answer -match '^[Yy]$')
+$answer       = Read-Default -Prompt '是否安装 .NET 运行环境? [y/N]' -Default '否'
+$InstallDotnet = ($answer -match '^[Yy]$')
+$ListenPort   = Read-Default -Prompt '应用监听端口' -Default '5080'
+$Bind         = Read-Default -Prompt '监听回环地址' -Default '127.0.0.1'
+$HttpsPort    = Read-Default -Prompt 'HTTPS 端口' -Default '2130'
+$Domain       = Read-Default -Prompt '域名（没有则留空，跳过 HTTPS 域名绑定）' -Default ''
+$OutDir       = Read-Default -Prompt '本地打包输出目录' -Default '.deploy'
+$answer       = Read-Default -Prompt '自包含发布? [y/N]' -Default '否'
+$SelfContained = ($answer -match '^[Yy]$')
+Write-Host ""
+
+$root         = $PSScriptRoot
 $serverDir    = Join-Path $root 'server'
 $webDir       = Join-Path $root 'web'
-$outDir       = Join-Path $root '.deploy'
+$outDir       = Join-Path $root $OutDir
 $publishDir   = Join-Path $outDir 'publish'
 $tarball      = Join-Path $outDir 'clashserver.tar.gz'
 $deployScript = Join-Path $PSScriptRoot 'deploy-alinux4.sh'
@@ -74,9 +103,11 @@ if (-not $SkipBuild) {
     $webCfg = Join-Path $publishDir 'web.config'
     if (Test-Path $webCfg) { Remove-Item $webCfg -Force }
 
-    # 附带本地已有数据（若有）
+    # 附带本地已有数据（若有）；发布目录里若已被 dotnet publish 内置 Data，先删除再以本地为准
     $dataDir = Join-Path $serverDir 'Data'
     if (Test-Path $dataDir) {
+        $pubData = Join-Path $publishDir 'Data'
+        if (Test-Path $pubData) { Remove-Item $pubData -Recurse -Force }
         Copy-Item -Path $dataDir -Destination $publishDir -Recurse
         Write-Host '[信息] 已附带 server/Data 数据' -ForegroundColor Green
     }
@@ -101,8 +132,12 @@ if (-not $SkipDeploy) {
     $extra = @()
     if ($Domain) { $extra += "--domain $Domain" }
     if ($SelfContained) { $extra += '--self-contained' }
+    if ($CreateUser) { $extra += '--create-user' }
+    if ($InstallDotnet) { $extra += '--install-dotnet' }
     $extra += "--https-port $HttpsPort"
     $extra += "--remote-dir $RemoteDir"
+    $extra += "--listen-port $ListenPort"
+    $extra += "--bind $Bind"
     $sudoPrefix = if ($RemoteUser -eq 'root') { '' } else { 'sudo ' }
     ssh "$RemoteUser@$ServerIp" "$sudoPrefix bash /tmp/deploy-alinux4.sh $($extra -join ' ')"
     if ($LASTEXITCODE -ne 0) { throw '云端部署失败，请查看上方日志' }

@@ -62,13 +62,12 @@ scp .\clashserver.zip root@<公网IP>:/tmp/
 ### 3.1 部署目录与运行用户
 
 ```bash
-# 创建专用运行用户（无登录 shell）
-sudo useradd -r -s /usr/sbin/nologin clashsvc || true
+# 运行用户：与 systemd 配置一致，这里直接用 root（无需额外创建用户）
 
 # 放置应用
 sudo mkdir -p /opt/clashserver
 sudo cp -r /tmp/clashserver/* /opt/clashserver/     # 或 unzip 后复制
-sudo chown -R clashsvc:clashsvc /opt/clashserver
+sudo chown -R root:root /opt/clashserver
 sudo chmod 750 /opt/clashserver
 ```
 
@@ -77,46 +76,47 @@ sudo chmod 750 /opt/clashserver
 Alibaba Cloud Linux 4 基于 Anolis OS 23（RHEL 9 兼容系）。用微软官方安装脚本最稳，不依赖 dnf 源：
 
 ```bash
-# 方式一（推荐）：微软官方脚本装到 /usr/share/dotnet
-curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-sudo bash /tmp/dotnet-install.sh --channel 8.0 --runtime aspnetcore --install-dir /usr/share/dotnet
-sudo ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet
+# 方式一（推荐）：微软官方脚本，装到 root 用户目录 /root/.dotnet（与 systemd 里 ExecStart 路径一致）
+curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+sudo bash /tmp/dotnet-install.sh --channel 8.0 --runtime aspnetcore --install-dir /root/.dotnet
 
 # 验证
-dotnet --list-runtimes   # 应看到 Microsoft.AspNetCore.App 8.0.x
+/root/.dotnet/dotnet --list-runtimes   # 应看到 Microsoft.AspNetCore.App 8.0.x
 ```
 
 > 备选：若 `dnf search dotnet` / `dnf search aspnetcore` 在阿里云/龙蜥源里有包，可 `sudo dnf install -y aspnetcore-runtime-8.0` 更省事；没有就用上面的官方脚本，二者选一。
 
 ## Step 4 systemd 服务
 
-创建 `/etc/systemd/system/clashserver.service`：
+创建 `/etc/systemd/system/clashserver.service`（以你机器的配置为基准，仅补齐 `--urls` 与生产必需的环境变量）：
 
 ```ini
 [Unit]
-Description=ClashServer (ASP.NET Core 8)
-After=network.target
+Description=ClashServer .NET Application
+Documentation=https://docs.microsoft.com/dotnet/
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=clashsvc
-Group=clashsvc
-WorkingDirectory=/opt/clashserver
-# 方案 A（框架依赖）：
-ExecStart=/usr/bin/dotnet /opt/clashserver/ClashServer.dll --urls http://127.0.0.1:5080
+WorkingDirectory=/opt/clashserver/
+# 方案 A（框架依赖，dotnet 位于 /root/.dotnet/）：
+ExecStart=/root/.dotnet/dotnet /opt/clashserver/ClashServer.dll --urls http://127.0.0.1:5080
 # 方案 B（自包含单文件）：
 # ExecStart=/opt/clashserver/ClashServer --urls http://127.0.0.1:5080
+Restart=always
+RestartSec=10
+SyslogIdentifier=clashserver
 
-# 生产开关：Vue 模式（托管 wwwroot + /api 全量鉴权）
+# 应用配置（生产必需：Vue 模式托管 wwwroot + /api 全量鉴权）
 Environment=VueApp__Enabled=true
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=DOTNET_NOLOGO=1
 # 注意：不要设置 ASPNETCORE_HTTPS_PORT（避免 Kestrel 层 HTTPS 重定向与 Nginx 冲突）
 
-Restart=always
-RestartSec=5
-
-# 安全加固
+# 安全与权限
+User=root
+Group=root
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
@@ -244,10 +244,10 @@ sudo firewall-cmd --reload
 
 ## Step 7 数据迁移与首次配置
 
-- 已在 Step 2 上传 `server/Data`（`rules.json`、`settings.json`）→ 检查 `/opt/clashserver/Data/` 归属是否为 `clashsvc`，可写：
+- 已在 Step 2 上传 `server/Data`（`rules.json`、`settings.json`）→ 检查 `/opt/clashserver/Data/` 归属是否为 `root`，可写：
 
 ```bash
-sudo chown -R clashsvc:clashsvc /opt/clashserver/Data
+sudo chown -R root:root /opt/clashserver/Data
 ls -l /opt/clashserver/Data/
 ```
 
@@ -257,7 +257,7 @@ ls -l /opt/clashserver/Data/
 
 ## 一键发布脚本（推荐）
 
-两份脚本已随文档提供（`docs/deploy-alinux4/scripts/`）：
+两份脚本已随文档提供（位于项目根目录）：
 
 | 脚本 | 运行位置 | 作用 |
 |------|----------|------|
@@ -270,29 +270,32 @@ ls -l /opt/clashserver/Data/
 2. HTTPS 证书（可选）：把 `.crt/.key` 放到服务器 `/etc/nginx/ssl/`（文件名 `fullchain.crt`、`private.key`）。有证书则自动启用 HTTPS:2130，没有则自动降级为 HTTP 并提示。
 3. 阿里云控制台安全组入方向放行 80 与 2130。
 
-**一条命令完成部署**（在项目根目录 PowerShell 执行，IP 换成你的 ECS 公网 IP）：
+**运行部署（交互式输入）**：在项目根目录 PowerShell 执行，脚本会**逐项提示**输入，直接回车即采用括号内的默认值：
 
 ```powershell
-./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx -Domain your.domain.com
+./publish-and-upload.ps1
 ```
 
-常用变体：
-
-```powershell
-# 未绑定域名 / 暂无证书：先纯 HTTP 跑通（推荐事后补证书）
-./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx
-
-# 指定 HTTPS 端口（默认已是 2130，一般不用改）
-./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx -HttpsPort 2130
-
-# 只重新构建打包，不上传（本地检查产物）
-./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx -SkipDeploy
-
-# 只上传部署已打好的包，不重新构建
-./docs/deploy-alinux4/scripts/publish-and-upload.ps1 -ServerIp 47.100.xx.xx -SkipBuild
+```text
+===== 请按提示依次输入（直接回车采用默认值）=====
+  ECS 公网 IP（无默认）: 47.100.xx.xx          ← 必填
+  SSH 远程用户（默认: root）:
+  集群部署目录（远端）（默认: /opt/clashserver）:
+  是否创建运行用户? [y/N]（默认: 否）:
+  是否安装 .NET 运行环境? [y/N]（默认: 否）:
+  应用监听端口（默认: 5080）:
+  监听回环地址（默认: 127.0.0.1）:
+  HTTPS 端口（默认: 2130）:
+  域名（没有则留空，跳过 HTTPS 域名绑定）:
+  本地打包输出目录（默认: .deploy）:
+  自包含发布? [y/N]（默认: 否）:
 ```
 
-> 说明：脚本默认方案 A（框架依赖发布）。其中 HTTPS 端口 **默认即为 2130**，证书放 `/etc/nginx/ssl/`；想切换方案 B（自包含、云上免装 .NET），加 `-SelfContained` 参数即可，其余不变。
+- 全部采用默认值时，只需输入公网 IP 后一路回车。
+- **`创建运行用户` 与 `安装 .NET 运行环境` 默认均为「否」**：默认假定服务器已就绪（用户已存在、.NET 已装好），脚本会跳过这两步；若需脚本代为创建用户 / 安装 .NET，输入 `y` 开启。
+- 自包含发布时，即使输入 `y` 安装 .NET，云端脚本也会自动跳过安装（自包含不需要 runtime）。
+- 只重新构建打包（不上传）：加 `-SkipDeploy`；只上传已打包文件（不重新构建）：加 `-SkipBuild`。
+- 云端脚本 `deploy-alinux4.sh` 单独在服务器上直接运行时，同样支持交互式逐项输入；若被脚本以非终端方式调用，则自动改用命令行参数/默认值，不会挂起。
 
 ---
 

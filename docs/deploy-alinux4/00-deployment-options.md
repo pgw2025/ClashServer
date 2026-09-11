@@ -48,7 +48,7 @@
 | **上游订阅源网络可达性（最关键）** | Clash 订阅上游多为海外地址。若上游需要"科学上网"才能访问，**国内 ECS 直连会超时**。项目虽有 10s 超时 + stale 降级 + 指数退避，但持续不可达时订阅长期是旧数据 | 部署前先在本机确认上游 URL 是否可直连；若不可达，考虑：① 换一个国内可直连的订阅源；② 把服务部署到香港/新加坡轻量服务器（同样按本文操作）；③ 在 Nginx/网络层加代理出口（不依赖代码） |
 | `UseHttpsRedirection` 行为 | `Program.cs` 生产模式启用了它，但**只要不配置 `https_port`/`ASPNETCORE_HTTPS_PORT`，它只记一条警告并跳过重定向**，HTTP 反代不受影响 | systemd 里**不要**设置 `ASPNETCORE_HTTPS_PORT`；Nginx 负责 80→2130 跳转 |
 | `VueApp:Enabled` 必须为 `true` | 为 `false` 时走旧 Razor 页面、`/api` 不鉴权 | 通过 systemd 环境变量 `VueApp__Enabled=true` 覆盖（或改发布目录里的 `appsettings.json`） |
-| `server/Data/` 写权限 | 服务运行用户必须可读写 `Data/rules.json`、`Data/settings.json` | 目录 `chown` 给 systemd 里的运行用户；定期备份该目录 |
+| `server/Data/` 写权限 | 服务运行用户（此处为 root）必须可读写 `Data/rules.json`、`Data/settings.json` | 目录 `chown root:root`；定期备份该目录 |
 | `/sub` token 进 Nginx 日志 | `?token=` 在 URL 上，默认 access_log 会记录 | Nginx 对 `/sub` 单独 `access_log off` |
 | 安全组与防火墙 | 阿里云安全组默认全关入方向 | 只放行 80/2130；22 端口建议密钥登录 + 限 IP |
 

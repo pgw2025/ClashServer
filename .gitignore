@@ -33,3 +33,5 @@ runlog.txt
 runerr.txt
 _login_*.json
 _rule_*.json
+
+.deploy/
