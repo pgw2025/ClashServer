@@ -128,6 +128,9 @@ public class DashboardDto
     [JsonPropertyName("lastGoodUpdate")]
     public DateTimeOffset? LastGoodUpdate { get; set; }
 
+    [JsonPropertyName("lastUpstreamUpdate")]
+    public DateTimeOffset? LastUpstreamUpdate { get; set; }
+
     [JsonPropertyName("isStale")]
     public bool IsStale { get; set; }
 }

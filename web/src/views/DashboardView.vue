@@ -69,6 +69,11 @@
             <span class="metric-num">{{ nodes.length }}</span>
             <span class="metric-unit">个代理节点</span>
           </div>
+          <div class="metric-foot" :class="{ stale: dash.isStale }" :title="lastUpstreamTitle">
+            <span v-if="dash.lastUpstreamUpdate" class="upstream-time-dot" :class="{ stale: dash.isStale }"></span>
+            <span>{{ lastUpstreamLabel }}</span>
+            <span v-if="dash.isStale" class="upstream-stale-tag">数据已过期</span>
+          </div>
         </div>
       </div>
     </div>
@@ -151,7 +156,7 @@ import StaleBanner from '@/components/StaleBanner.vue'
 import { dashboardApi } from '@/api'
 import type { DashboardDto, ProxyNode } from '@/types'
 
-const dash = ref<DashboardDto>({ subUrl: '', enabledRuleCount: 0, nodeCount: 0, lastGoodUpdate: null, isStale: false })
+const dash = ref<DashboardDto>({ subUrl: '', enabledRuleCount: 0, nodeCount: 0, lastGoodUpdate: null, lastUpstreamUpdate: null, isStale: false })
 const nodes = ref<ProxyNode[]>([])
 const testingMap = ref<Record<string, boolean>>({})
 const testingAll = ref(false)
@@ -171,6 +176,28 @@ const availableTypes = computed(() => {
     if (n.type) set.add(n.type.toLowerCase())
   }
   return Array.from(set)
+})
+
+// 最后一次从上游合并更新的展示文案（相对时间）
+const lastUpstreamLabel = computed(() => {
+  const iso = dash.value.lastUpstreamUpdate
+  if (!iso) return '尚未从上游更新过'
+  const then = new Date(iso).getTime()
+  const diffMs = Date.now() - then
+  if (diffMs < 0) return '刚刚更新'
+  const min = Math.floor(diffMs / 60000)
+  if (min < 1) return '刚刚更新'
+  if (min < 60) return `${min} 分钟前更新`
+  const hour = Math.floor(min / 60)
+  if (hour < 24) return `${hour} 小时前更新`
+  const day = Math.floor(hour / 24)
+  return `${day} 天前更新`
+})
+
+const lastUpstreamTitle = computed(() => {
+  const iso = dash.value.lastUpstreamUpdate
+  if (!iso) return '尚未从上游更新过'
+  return new Date(iso).toLocaleString('zh-CN')
 })
 
 async function copySub() {
@@ -423,6 +450,36 @@ onMounted(() => {
 .metric-unit {
   font-size: 12px;
   color: var(--muted);
+}
+.metric-foot {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.metric-foot.stale {
+  color: var(--warning);
+}
+.upstream-time-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex-shrink: 0;
+}
+.upstream-time-dot.stale {
+  background: var(--warning);
+}
+.upstream-stale-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--warning-subtle);
+  color: var(--warning);
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 /* 操作工具栏与分类筛选 */

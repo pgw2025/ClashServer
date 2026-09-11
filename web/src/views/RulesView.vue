@@ -44,7 +44,7 @@
               {{ col.label }}
               <span v-if="sortKey === col.key" class="sort-mark">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
             </th>
-            <th style="width: 170px;">操作</th>
+            <th style="width: 230px;">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -62,8 +62,10 @@
             <td class="muted">{{ r.remark || '—' }}</td>
             <td class="muted text-time">{{ formatTime(r.updatedAt) }}</td>
             <td class="ops">
+              <button class="btn mini" @click="move(r.id, 'top')" title="置顶">⏫</button>
               <button class="btn mini" @click="move(r.id, 'up')" title="上移">↑</button>
               <button class="btn mini" @click="move(r.id, 'down')" title="下移">↓</button>
+              <button class="btn mini" @click="move(r.id, 'bottom')" title="置底">⏬</button>
               <button class="btn mini" @click="openForm(r)">编辑</button>
               <button class="btn mini danger" @click="remove(r)">删除</button>
             </td>
@@ -107,8 +109,10 @@
 
         <div class="rule-card-actions">
           <div class="move-group">
+            <button class="btn mini" @click="move(r.id, 'top')" title="置顶">⏫</button>
             <button class="btn mini" @click="move(r.id, 'up')" title="上移">↑</button>
             <button class="btn mini" @click="move(r.id, 'down')" title="下移">↓</button>
+            <button class="btn mini" @click="move(r.id, 'bottom')" title="置底">⏬</button>
           </div>
           <div class="edit-group">
             <button class="btn mini" @click="openForm(r)">编辑</button>
@@ -171,8 +175,8 @@ const rules = ref<RuleDto[]>([])
 const groups = ref<string[]>([])
 const stale = ref<{ isStale: boolean; lastGoodUpdate: string | null }>({ isStale: false, lastGoodUpdate: null })
 const search = ref('')
-const sortKey = ref<string>('updatedAt')
-const sortDir = ref<'asc' | 'desc'>('desc')
+const sortKey = ref<string>('')
+const sortDir = ref<'asc' | 'desc' | ''>('')
 const selected = ref<Set<string>>(new Set())
 const saving = ref(false)
 const formError = ref('')
@@ -204,6 +208,7 @@ const filteredRules = computed(() => {
   const arr = rules.value.filter(
     (r) => !kw || (r.target + (r.remark ?? '')).toLowerCase().includes(kw)
   )
+  if (!sortKey.value) return arr
   const dir = sortDir.value === 'asc' ? 1 : -1
   arr.sort((a, b) => {
     const ka = a[sortKey.value as keyof RuleDto]
@@ -271,8 +276,14 @@ async function toggleRule(id: string) {
   await load()
 }
 
-async function move(id: string, dir: 'up' | 'down') {
-  dir === 'up' ? await rulesApi.moveUp(id) : await rulesApi.moveDown(id)
+async function move(id: string, dir: 'top' | 'bottom' | 'up' | 'down') {
+  if (dir === 'top') {
+    const r = rules.value.find((x) => x.id === id)
+    if (r?.ruleType === 'MATCH' && !confirm('MATCH 规则应放在列表末尾兜底，置顶后其后的规则将永远不会被匹配。仍要置顶吗？')) return
+  }
+  await rulesApi.move(id, dir)
+  sortKey.value = ''
+  sortDir.value = ''
   await load()
 }
 

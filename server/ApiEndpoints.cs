@@ -162,35 +162,31 @@ public static class ApiEndpoints
             return Results.Ok(ApiResponse<RuleDto>.Success(RuleDto.From(rule)));
         });
 
-        g.MapPost("/rules/{id}/move-up", async (Guid id, IStorageService storage, IClashSubService sub) =>
+        g.MapPost("/rules/{id}/move", async (Guid id, [FromQuery] string direction, IStorageService storage, IClashSubService sub) =>
         {
             var rules = await storage.GetRulesAsync();
             var idx = rules.FindIndex(r => r.Id == id);
-            if (idx > 0)
-            {
-                (rules[idx - 1], rules[idx]) = (rules[idx], rules[idx - 1]);
-                rules[idx].UpdatedAt = DateTime.Now;
-                rules[idx - 1].UpdatedAt = DateTime.Now;
-                await storage.SaveRulesAsync(rules);
-                sub.ClearCache();
-            }
-            return Results.Ok(ApiResponse<object>.Success(new { moved = idx > 0 }));
-        });
+            if (idx < 0) return Results.NotFound(ApiResponse<object>.Failure("规则不存在"));
 
-        g.MapPost("/rules/{id}/move-down", async (Guid id, IStorageService storage, IClashSubService sub) =>
-        {
-            var rules = await storage.GetRulesAsync();
-            var idx = rules.FindIndex(r => r.Id == id);
-            var moved = idx >= 0 && idx < rules.Count - 1;
-            if (moved)
+            var target = direction switch
             {
-                (rules[idx + 1], rules[idx]) = (rules[idx], rules[idx + 1]);
-                rules[idx].UpdatedAt = DateTime.Now;
-                rules[idx + 1].UpdatedAt = DateTime.Now;
-                await storage.SaveRulesAsync(rules);
-                sub.ClearCache();
-            }
-            return Results.Ok(ApiResponse<object>.Success(new { moved }));
+                "top" => 0,
+                "bottom" => rules.Count - 1,
+                "up" => idx - 1,
+                "down" => idx + 1,
+                _ => int.MinValue
+            };
+            if (target == int.MinValue) return Results.BadRequest(ApiResponse<object>.Failure("无效的移动方向"));
+
+            if (target < 0 || target >= rules.Count || target == idx)
+                return Results.Ok(ApiResponse<object>.Success(new { moved = false }));
+
+            var rule = rules[idx];
+            rules.RemoveAt(idx);
+            rules.Insert(target, rule);
+            await storage.SaveRulesAsync(rules);
+            sub.ClearCache();
+            return Results.Ok(ApiResponse<object>.Success(new { moved = true }));
         });
 
         g.MapPost("/rules/batch", async ([FromBody] BatchRequest req, IStorageService storage, IClashSubService sub) =>
@@ -450,6 +446,7 @@ public static class ApiEndpoints
                 EnabledRuleCount = rules.Count(r => r.Enabled),
                 NodeCount = nodes?.Count ?? 0,
                 LastGoodUpdate = stale.LastGood,
+                LastUpstreamUpdate = sub.GetLastUpstreamUpdate(),
                 IsStale = stale.IsStale
             };
             return Results.Ok(ApiResponse<DashboardDto>.Success(dto, stale.LastGood, stale.IsStale));

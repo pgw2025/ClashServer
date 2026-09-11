@@ -45,6 +45,7 @@ export interface DashboardDto {
   enabledRuleCount: number
   nodeCount: number
   lastGoodUpdate: string | null
+  lastUpstreamUpdate: string | null
   isStale: boolean
 }
 

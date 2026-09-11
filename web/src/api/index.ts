@@ -25,8 +25,8 @@ export const rulesApi = {
     unwrap(http.put<ApiResponse<RuleDto>>(`/api/rules/${id}`, dto)),
   remove: (id: string) => unwrap(http.delete<ApiResponse<unknown>>(`/api/rules/${id}`)),
   toggle: (id: string) => unwrap(http.post<ApiResponse<RuleDto>>(`/api/rules/${id}/toggle`)),
-  moveUp: (id: string) => unwrap(http.post<ApiResponse<unknown>>(`/api/rules/${id}/move-up`)),
-  moveDown: (id: string) => unwrap(http.post<ApiResponse<unknown>>(`/api/rules/${id}/move-down`)),
+  move: (id: string, direction: 'top' | 'bottom' | 'up' | 'down') =>
+    unwrap(http.post<ApiResponse<unknown>>(`/api/rules/${id}/move?direction=${direction}`)),
   batch: (ids: string[], policy: string) =>
     unwrap(http.post<ApiResponse<unknown>>('/api/rules/batch', { ids, policy })),
   clear: () => unwrap(http.post<ApiResponse<unknown>>('/api/rules/clear')),
