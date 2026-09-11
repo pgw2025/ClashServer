@@ -3,7 +3,7 @@ import type { ApiResponse, DashboardDto, RuleDto, SettingsDto, ConfigDto, ProxyN
 
 export const authApi = {
   login: (username: string, password: string) =>
-    unwrap(http.post<ApiResponse<unknown>>('/api/auth/login', { username, password })),
+    unwrap(http.post<ApiResponse<{ loggedIn: boolean; token?: string }>>('/api/auth/login', { username, password })),
   logout: () => unwrap(http.post<ApiResponse<unknown>>('/api/auth/logout')),
   status: () => unwrap(http.get<ApiResponse<{ loggedIn: boolean }>>('/api/auth/status'))
 }

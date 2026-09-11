@@ -29,15 +29,15 @@
       <div class="grid">
         <div class="field">
           <label>缓存时长（分钟）</label>
-          <input v-model.number="form.cacheMinutes" type="number" min="1" max="1440" />
+          <input v-model.number="form.cacheMinutes" type="number" inputmode="numeric" min="1" max="1440" />
         </div>
         <div class="field">
-          <label>管理页面抓取超时（秒）</label>
-          <input v-model.number="form.adminFetchTimeoutSeconds" type="number" min="1" max="60" />
+          <label>管理抓取超时（秒）</label>
+          <input v-model.number="form.adminFetchTimeoutSeconds" type="number" inputmode="numeric" min="1" max="60" />
         </div>
         <div class="field">
-          <label>订阅端点抓取超时（秒）</label>
-          <input v-model.number="form.publicSubFetchTimeoutSeconds" type="number" min="1" max="60" />
+          <label>订阅抓取超时（秒）</label>
+          <input v-model.number="form.publicSubFetchTimeoutSeconds" type="number" inputmode="numeric" min="1" max="60" />
         </div>
       </div>
 
@@ -200,14 +200,22 @@ onMounted(reload)
 </script>
 
 <style scoped>
+.card { margin-bottom: 16px; }
 .field { margin-bottom: 16px; }
-.field label { display: block; font-weight: 600; margin-bottom: 4px; }
+.field label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 13.5px; }
 .field input[type='text'], .field input[type='password'], .field input[type='number'] { width: 100%; }
-.token-row { display: flex; gap: 8px; }
-.token-row input { flex: 1; }
+.token-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.token-row input { flex: 1; min-width: 180px; }
+.token-row .btn { flex-shrink: 0; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-@media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
-.check { display: flex; align-items: center; gap: 8px; font-weight: 400 !important; }
-.hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.actions { display: flex; gap: 8px; align-items: center; }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 400 !important; cursor: pointer; user-select: none; }
+.hint { color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.4; }
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+
+@media (max-width: 768px) {
+  .grid { grid-template-columns: 1fr; gap: 8px; }
+  .actions { flex-direction: column; align-items: stretch; }
+  .actions .btn { width: 100%; min-height: 40px; }
+  .token-row .btn { width: 100%; }
+}
 </style>

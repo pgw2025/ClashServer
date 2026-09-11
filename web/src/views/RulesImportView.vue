@@ -20,25 +20,27 @@
     </div>
 
     <div v-if="parsed.length" class="card">
-      <div class="row" style="justify-content: space-between;">
+      <div class="row preview-header">
         <h3>预览（{{ parsed.length }} 条）</h3>
         <button class="btn primary" :disabled="importing" @click="doImport">
           {{ importing ? '导入中…' : `确认导入 ${parsed.length} 条` }}
         </button>
       </div>
-      <table class="table">
-        <thead>
-          <tr><th>类型</th><th>匹配内容</th><th>策略</th><th>备注</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="(r, i) in parsed" :key="i">
-            <td>{{ r.ruleType }}</td>
-            <td class="mono">{{ r.target }}</td>
-            <td>{{ r.policy }}</td>
-            <td class="muted">{{ r.remark || '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr><th>类型</th><th>匹配内容</th><th>策略</th><th>备注</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(r, i) in parsed" :key="i">
+              <td>{{ r.ruleType }}</td>
+              <td class="mono">{{ r.target }}</td>
+              <td>{{ r.policy }}</td>
+              <td class="muted">{{ r.remark || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
@@ -99,7 +101,14 @@ dashboardApi.get().then((d) => { stale.value = { isStale: d.isStale, lastGoodUpd
 </script>
 
 <style scoped>
-.row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-.yaml-input { width: 100%; font-size: 13px; line-height: 1.6; }
+.row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.preview-header { justify-content: space-between; }
+.yaml-input { width: 100%; font-size: 13px; line-height: 1.6; box-sizing: border-box; }
 .mono { font-family: monospace; }
+.table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 768px) {
+  .row .btn { flex: 1 1 calc(50% - 8px); }
+  .preview-header .btn { flex: 0 0 auto; }
+}
 </style>

@@ -10,6 +10,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await authApi.status()
       loggedIn.value = res.data?.loggedIn ?? false
+      if (!loggedIn.value) {
+        localStorage.removeItem('clash_token')
+      }
     } catch {
       loggedIn.value = false
     } finally {
@@ -18,14 +21,20 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(username: string, password: string) {
-    await authApi.login(username, password)
+    const res = await authApi.login(username, password)
+    const token = res.data?.token
+    if (token) {
+      localStorage.setItem('clash_token', token)
+    }
     loggedIn.value = true
+    checked.value = true
   }
 
   async function logout() {
     try {
       await authApi.logout()
     } finally {
+      localStorage.removeItem('clash_token')
       loggedIn.value = false
     }
   }

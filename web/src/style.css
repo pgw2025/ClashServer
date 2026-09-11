@@ -53,9 +53,32 @@ input, select, textarea {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 10px;
-  font-size: 13px;
+  font-size: 14px;
   background: var(--card);
   color: var(--text);
+  max-width: 100%;
+}
+
+/* Touch targets and mobile helpers */
+button, select, input, a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 13.5px;
+  }
+  .card {
+    padding: 12px;
+    border-radius: 8px;
+  }
+  .btn {
+    min-height: 38px;
+    padding: 6px 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 .banner-stale {
