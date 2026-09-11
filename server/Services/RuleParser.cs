@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using ClashServer.Models;
 
 namespace ClashServer.Services;
@@ -14,7 +15,7 @@ public static class RuleParser
         };
 
         var result = new List<CustomRule>();
-        foreach (var line in ParseYamlLines(yamlText))
+        foreach (var line in PreprocessLines(yamlText))
         {
             var rule = ParseLine(line, knownTypes, validPolicies);
             if (rule != null) result.Add(rule);
@@ -22,12 +23,86 @@ public static class RuleParser
         return result;
     }
 
-    private static List<string> ParseYamlLines(string yamlRulesText)
+    /// <summary>从原始文本提取规则行：识别 rules: 块、剥离 YAML 列表前缀 - ，纯文本兜底（复用于 SPA parse 与 Razor 导入）。</summary>
+    public static List<string> PreprocessLines(string yamlRulesText)
     {
-        if (string.IsNullOrWhiteSpace(yamlRulesText)) return new();
-        return yamlRulesText
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(yamlRulesText)) return result;
+
+        var lines = yamlRulesText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var inRulesBlock = false;
+        var rulesIndent = -1;
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd();
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var trimmed = line.TrimStart();
+
+            if (trimmed.StartsWith('#'))
+            {
+                if (inRulesBlock) continue;
+                continue;
+            }
+
+            if (!inRulesBlock)
+            {
+                if (Regex.IsMatch(trimmed, @"^rules\s*:"))
+                {
+                    inRulesBlock = true;
+                    rulesIndent = rawLine.Length - trimmed.Length;
+                    continue;
+                }
+                continue;
+            }
+
+            var currentIndent = rawLine.Length - trimmed.Length;
+            if (currentIndent <= rulesIndent && trimmed.Length > 0)
+            {
+                if (!trimmed.StartsWith("-"))
+                {
+                    inRulesBlock = false;
+                    continue;
+                }
+            }
+
+            if (trimmed.StartsWith("- "))
+            {
+                var ruleText = trimmed[2..].Trim();
+                if (!string.IsNullOrWhiteSpace(ruleText))
+                {
+                    result.Add(ruleText);
+                }
+            }
+            else if (trimmed.StartsWith('-'))
+            {
+                var ruleText = trimmed[1..].Trim();
+                if (!string.IsNullOrWhiteSpace(ruleText))
+                {
+                    result.Add(ruleText);
+                }
+            }
+        }
+
+        if (result.Count == 0)
+        {
+            foreach (var rawLine in lines)
+            {
+                var trimmed = rawLine.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith('#')) continue;
+                if (Regex.IsMatch(trimmed, @"^rules\s*:")) continue;
+                if (trimmed.StartsWith("- "))
+                {
+                    result.Add(trimmed[2..].Trim());
+                }
+                else if (trimmed.Contains(',') && trimmed.Length > 5)
+                {
+                    result.Add(trimmed);
+                }
+            }
+        }
+
+        return result;
     }
 
     private static CustomRule? ParseLine(string line, HashSet<string> validTypes, HashSet<string> validPolicies)
