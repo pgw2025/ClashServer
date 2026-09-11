@@ -51,14 +51,15 @@ export const configApi = {
 export const backupApi = {
   // 导出走原生 blob 下载，不走统一响应壳
   exportFile: () => http.get('/api/backup/export', { responseType: 'blob' }),
+  // 上传必须显式声明 multipart/form-data，否则 axios 默认头 application/json 会把 FormData JSON 化（{file:{}}）
   preview: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
-    return unwrap(http.post<ApiResponse<BackupPreview>>('/api/backup/preview', fd))
+    return unwrap(http.post<ApiResponse<BackupPreview>>('/api/backup/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
   },
   importFile: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
-    return unwrap(http.post<ApiResponse<BackupImportResult>>('/api/backup/import', fd))
+    return unwrap(http.post<ApiResponse<BackupImportResult>>('/api/backup/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
   }
 }
