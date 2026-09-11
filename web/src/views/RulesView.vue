@@ -1,20 +1,35 @@
 <template>
-  <div>
+  <div class="rules-view">
     <StaleBanner :is-stale="stale.isStale" :last-good-update="stale.lastGoodUpdate" />
 
-    <div class="toolbar">
-      <button class="btn primary" @click="openForm()">+ 新增规则</button>
-      <input v-model.trim="search" class="grow" placeholder="搜索匹配内容 / 备注…" />
-      
-      <div class="batch-bar" v-if="rules.length">
-        <span class="muted select-count">已选 {{ selected.size }} 项</span>
-        <select v-model="targetPolicy" class="compact">
-          <option value="">— 改策略为… —</option>
-          <option v-for="p in allPolicies" :key="p" :value="p">{{ p }}</option>
-        </select>
-        <button class="btn" :disabled="selected.size === 0 || !targetPolicy" @click="applyBatchPolicy">批量改策略</button>
-        <button class="btn danger" :disabled="selected.size === 0" @click="batchDelete">批量删除</button>
-        <button class="btn danger" @click="clearAll">清空全部</button>
+    <div class="card toolbar-card">
+      <div class="toolbar">
+        <button class="btn primary" @click="openForm()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>新增规则</span>
+        </button>
+
+        <div class="search-box grow">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input v-model.trim="search" class="search-input" placeholder="搜索匹配内容 / 备注…" />
+        </div>
+        
+        <div class="batch-bar" v-if="rules.length">
+          <span class="muted select-count">已选 {{ selected.size }} 项</span>
+          <select v-model="targetPolicy" class="compact">
+            <option value="">— 改策略为… —</option>
+            <option v-for="p in allPolicies" :key="p" :value="p">{{ p }}</option>
+          </select>
+          <button class="btn" :disabled="selected.size === 0 || !targetPolicy" @click="applyBatchPolicy">批量改策略</button>
+          <button class="btn danger" :disabled="selected.size === 0" @click="batchDelete">批量删除</button>
+          <button class="btn danger" @click="clearAll">清空全部</button>
+        </div>
       </div>
     </div>
 
@@ -23,33 +38,38 @@
       <table class="table">
         <thead>
           <tr>
-            <th><input type="checkbox" :checked="allSelected" @change="toggleAll" /></th>
+            <th style="width: 36px;"><input type="checkbox" :checked="allSelected" @change="toggleAll" /></th>
+            <th style="width: 60px;">状态</th>
             <th v-for="col in columns" :key="col.key" @click="toggleSort(col.key)" class="sortable">
               {{ col.label }}
-              <span v-if="sortKey === col.key" class="muted">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortKey === col.key" class="sort-mark">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
             </th>
-            <th>操作</th>
+            <th style="width: 170px;">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in filteredRules" :key="r.id">
+          <tr v-for="r in filteredRules" :key="r.id" class="rule-row" :class="{ 'row-disabled': !r.enabled }">
             <td><input type="checkbox" :checked="selected.has(r.id)" @change="toggleSelect(r.id)" /></td>
-            <td><span class="badge" :class="r.enabled ? 'ok' : 'muted-badge'">{{ r.enabled ? '启用' : '停用' }}</span></td>
-            <td>{{ r.ruleType }}</td>
-            <td class="mono">{{ r.target }}</td>
-            <td>{{ r.policy }}</td>
+            <td>
+              <label class="switch-toggle" title="切换启用状态">
+                <input type="checkbox" :checked="r.enabled" @change="toggleRule(r.id)" />
+                <span class="switch-slider"></span>
+              </label>
+            </td>
+            <td><span class="badge-type">{{ r.ruleType }}</span></td>
+            <td class="mono target-text" :title="r.target">{{ r.target }}</td>
+            <td><span class="policy-pill" :class="policyClass(r.policy)">{{ r.policy }}</span></td>
             <td class="muted">{{ r.remark || '—' }}</td>
-            <td class="muted">{{ formatTime(r.updatedAt) }}</td>
+            <td class="muted text-time">{{ formatTime(r.updatedAt) }}</td>
             <td class="ops">
-              <button class="btn mini" @click="toggleRule(r.id)">{{ r.enabled ? '停用' : '启用' }}</button>
-              <button class="btn mini" @click="move(r.id, 'up')">↑</button>
-              <button class="btn mini" @click="move(r.id, 'down')">↓</button>
+              <button class="btn mini" @click="move(r.id, 'up')" title="上移">↑</button>
+              <button class="btn mini" @click="move(r.id, 'down')" title="下移">↓</button>
               <button class="btn mini" @click="openForm(r)">编辑</button>
               <button class="btn mini danger" @click="remove(r)">删除</button>
             </td>
           </tr>
           <tr v-if="!filteredRules.length">
-            <td colspan="8" class="muted center">暂无规则</td>
+            <td colspan="8" class="muted center empty-cell">暂无匹配规则</td>
           </tr>
         </tbody>
       </table>
@@ -64,23 +84,24 @@
         </label>
       </div>
 
-      <div v-for="r in filteredRules" :key="r.id" class="card rule-card">
+      <div v-for="r in filteredRules" :key="r.id" class="card rule-card" :class="{ 'card-disabled': !r.enabled }">
         <div class="rule-card-top">
           <label class="check-label">
             <input type="checkbox" :checked="selected.has(r.id)" @change="toggleSelect(r.id)" />
             <span class="badge-type">{{ r.ruleType }}</span>
           </label>
           <div class="rule-card-status">
-            <button class="status-btn" :class="r.enabled ? 'active' : 'inactive'" @click="toggleRule(r.id)">
-              {{ r.enabled ? '● 启用' : '○ 停用' }}
-            </button>
+            <label class="switch-toggle">
+              <input type="checkbox" :checked="r.enabled" @change="toggleRule(r.id)" />
+              <span class="switch-slider"></span>
+            </label>
           </div>
         </div>
 
         <div class="rule-target mono">{{ r.target }}</div>
 
         <div class="rule-meta-row">
-          <span class="rule-policy-pill">策略: {{ r.policy }}</span>
+          <span class="policy-pill" :class="policyClass(r.policy)">{{ r.policy }}</span>
           <span v-if="r.remark" class="rule-remark muted">📝 {{ r.remark }}</span>
         </div>
 
@@ -97,14 +118,14 @@
       </div>
 
       <div v-if="!filteredRules.length" class="card center muted py-6">
-        暂无规则
+        暂无匹配规则
       </div>
     </div>
 
     <!-- 编辑/新增弹窗 -->
     <div v-if="showForm" class="overlay" @click.self="closeForm">
       <div class="card form">
-        <h3>{{ editing ? '编辑规则' : '新增规则' }}</h3>
+        <h3>{{ editing ? '编辑路由规则' : '新增路由规则' }}</h3>
         <label>规则类型
           <select v-model="form.ruleType">
             <option v-for="t in RULE_TYPES" :key="t" :value="t">{{ t }}</option>
@@ -285,6 +306,14 @@ async function clearAll() {
 const targetPolicy = ref('')
 const formatTime = (iso: string) => new Date(iso).toLocaleString('zh-CN')
 
+function policyClass(p: string) {
+  const up = (p || '').toUpperCase()
+  if (up === 'DIRECT') return 'direct'
+  if (up === 'PROXY') return 'proxy'
+  if (up === 'REJECT') return 'reject'
+  return 'custom'
+}
+
 onMounted(() => {
   load()
   dashboardApi.groups().then((g) => { groups.value = g.data ?? [] })
@@ -292,82 +321,134 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-.grow { flex: 1; min-width: 180px; }
+.rules-view { display: flex; flex-direction: column; gap: 16px; }
+
+.toolbar-card {
+  padding: 12px 16px;
+}
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; min-width: 200px; }
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.search-input {
+  width: 100%;
+  padding-left: 32px;
+}
+
 .batch-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .compact { width: 140px; }
-.select-count { white-space: nowrap; font-size: 13px; }
+.select-count { white-space: nowrap; font-size: 13px; font-weight: 500; }
 .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-.badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
-.badge.ok { background: #e8f5e9; color: var(--ok); border-color: var(--ok); }
-.muted-badge { background: var(--bg); color: var(--muted); }
-.mono { font-family: monospace; word-break: break-all; }
+.sort-mark { color: var(--brand); font-weight: bold; margin-left: 2px; }
+
+.mono { font-family: "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace; word-break: break-all; }
+.target-text { font-size: 13px; color: var(--text); font-weight: 500; }
+.text-time { font-size: 12px; }
+
+.badge-type {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  background: var(--card-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.rule-row {
+  transition: background 0.12s ease, opacity 0.15s ease;
+}
+.rule-row.row-disabled {
+  opacity: 0.55;
+  background: var(--bg);
+}
+.rule-row:hover:not(.row-disabled) {
+  background: var(--card-subtle);
+}
+
 .ops { display: flex; gap: 4px; flex-wrap: wrap; }
 .btn.mini { padding: 4px 8px; font-size: 12px; min-height: 28px; }
 .center { text-align: center; }
+.empty-cell { padding: 32px !important; }
 .py-6 { padding-top: 24px; padding-bottom: 24px; }
-.overlay { position: fixed; inset: 0; background: #0009; display: flex; align-items: center; justify-content: center; z-index: 60; padding: 16px; }
-.form { width: 420px; max-width: 100%; display: flex; flex-direction: column; gap: 12px; }
-.form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
-.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 16px;
+}
+.form {
+  width: 440px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+}
+.form h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
 /* Mobile Card View Rules */
 .mobile-rules-list { display: none; flex-direction: column; gap: 10px; }
 .mobile-select-all { padding: 4px 4px 8px; }
 .check-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
 .check-label input { width: 16px; height: 16px; margin: 0; }
-.badge-type {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 6px;
+
+.rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  transition: opacity 0.15s ease;
+}
+.rule-card.card-disabled {
+  opacity: 0.55;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
 }
-.rule-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
 .rule-card-top { display: flex; justify-content: space-between; align-items: center; }
-.status-btn {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 2px 10px;
-  font-size: 11px;
-  cursor: pointer;
-}
-.status-btn.active { color: var(--ok); border-color: var(--ok); background: #e8f5e9; }
-.status-btn.inactive { color: var(--muted); }
 .rule-target { font-size: 14px; font-weight: 600; color: var(--text); }
-.rule-meta-row { display: flex; align-items: center; gap: 10px; font-size: 12px; flex-wrap: wrap; }
-.rule-policy-pill {
-  background: rgba(47, 111, 237, 0.1);
-  color: var(--brand);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 500;
-}
+.rule-meta-row { display: flex; align-items: center; gap: 10px; font-size: 12px; flex-wrap: wrap; margin-top: 2px; }
 .rule-remark { font-size: 12px; }
 .rule-card-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-top: 1px solid var(--border);
-  padding-top: 8px;
-  margin-top: 2px;
+  padding-top: 10px;
+  margin-top: 4px;
 }
 .move-group, .edit-group { display: flex; gap: 6px; }
 
 @media (max-width: 768px) {
   .desktop-table-wrapper { display: none; }
   .mobile-rules-list { display: flex; }
-  .toolbar { gap: 6px; }
+  .toolbar { gap: 8px; }
   .toolbar .grow { min-width: 100%; order: 1; }
   .toolbar > .btn.primary { width: 100%; order: 0; min-height: 40px; }
   .batch-bar { order: 2; width: 100%; justify-content: space-between; }
   .batch-bar .compact { flex: 1; min-width: 110px; }
   .batch-bar .btn { flex: 1; min-height: 36px; padding: 4px 6px; }
-}
-@media (prefers-color-scheme: dark) {
-  .status-btn.active { background: #183321; }
-  .rule-policy-pill { background: rgba(91, 140, 255, 0.15); }
 }
 </style>
