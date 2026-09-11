@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -34,6 +35,7 @@ public static class ApiEndpoints
         MapConfig(group);
         MapNodes(group);
         MapDashboard(group);
+        MapBackup(group);
     }
 
     private static void MapAuth(RouteGroupBuilder g)
@@ -472,6 +474,188 @@ public static class ApiEndpoints
         });
     }
 
+    private const int BackupFormatVersion = 1;
+
+    private static void MapBackup(RouteGroupBuilder g)
+    {
+        // 导出：settings+rules+manifest 打包为 zip，纯本地读取，不依赖上游（R1 不受影响）
+        g.MapGet("/backup/export", async (IStorageService storage) =>
+        {
+            var settingsBytes = await storage.GetRawSettingsFileAsync();
+            var rulesBytes = await storage.GetRawRulesFileAsync();
+            var manifest = new BackupManifest
+            {
+                FormatVersion = BackupFormatVersion,
+                ExportedAt = DateTimeOffset.Now,
+                Entries = new[] { "manifest.json", "settings.json", "rules.json" }.ToList()
+            };
+
+            using var ms = new MemoryStream();
+            using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                await WriteZipEntryAsync(zip, "manifest.json",
+                    JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions));
+                await WriteZipEntryAsync(zip, "settings.json", settingsBytes);
+                await WriteZipEntryAsync(zip, "rules.json", rulesBytes);
+            }
+            ms.Position = 0;
+
+            var fileName = $"clashserver-backup-{DateTime.Now:yyyyMMdd-HHmmss}.zip";
+            return Results.File(ms.ToArray(), "application/zip", fileName);
+        });
+
+        // 预览：只读校验并返回清单，绝不在磁盘落任何内容
+        // 不走 IFormFile 绑定——那会触发 .NET 8 对 form 端点的自动 antiforgery（需 UseAntiforgery 中间件）。
+        // 从 HttpContext 手读表单文件，CSRF 仍由自定义 ApiCsrfFilter（强制 X-Requested-With 头）兜底。
+        g.MapPost("/backup/preview", async (HttpContext ctx) =>
+        {
+            var file = ctx.Request.Form.Files.GetFile("file");
+            return await HandlePreviewOrImportAsync(file, commit: false, storage: null!, sub: null!);
+        });
+
+        // 导入：校验通过后「自动备份当前数据 → 全量覆盖 → 清缓存」，返回还原摘要
+        g.MapPost("/backup/import", async (HttpContext ctx, IStorageService storage, IClashSubService sub) =>
+        {
+            var file = ctx.Request.Form.Files.GetFile("file");
+            return await HandlePreviewOrImportAsync(file, commit: true, storage, sub);
+        });
+    }
+
+    // 由 preview / import 复用：先只读校验 zip；commit=true 时才执行还原落盘
+    private static async Task<IResult> HandlePreviewOrImportAsync(
+        IFormFile? file, bool commit, IStorageService storage, IClashSubService sub)
+    {
+        if (file == null || file.Length == 0)
+            return Results.BadRequest(ApiResponse<object>.Failure("请选择备份文件"));
+
+        var (files, badZip) = await ReadZipAsync(file);
+        if (badZip || files.Count == 0)
+            return Results.BadRequest(ApiResponse<object>.Failure("无效的 zip 备份文件"));
+
+        var (manifest, settings, rules, error) = await ValidateBackupAsync(files);
+        if (error != null)
+            return Results.BadRequest(ApiResponse<object>.Failure(error));
+
+        if (!commit)
+        {
+            return Results.Ok(ApiResponse<BackupPreviewResponse>.Success(new BackupPreviewResponse
+            {
+                ExportedAt = manifest!.ExportedAt,
+                FormatVersion = manifest.FormatVersion,
+                ContainsSettings = settings != null,
+                RuleCount = rules!.Count,
+                Entries = manifest.Entries ?? new List<string>()
+            }));
+        }
+
+        // 写盘前读取当前凭据，判定还原后是否需要重新登录（凭据哈希绑定）
+        var current = await storage.GetSettingsAsync();
+        var credChanged = settings != null
+            && (!string.Equals(settings.Username?.Trim(), current.Username?.Trim(), StringComparison.Ordinal)
+                || !string.Equals(settings.PasswordHash, current.PasswordHash, StringComparison.Ordinal));
+
+        var backupDir = await storage.SnapshotBackupAsync();
+
+        var restored = new List<string>();
+        if (settings != null)
+        {
+            await storage.WriteRawSettingsFileAsync(files["settings.json"]);
+            restored.Add("settings.json");
+        }
+        if (rules != null)
+        {
+            await storage.WriteRawRulesFileAsync(files["rules.json"]);
+            restored.Add("rules.json");
+        }
+        sub.ClearCache();
+
+        return Results.Ok(ApiResponse<BackupImportResponse>.Success(new BackupImportResponse
+        {
+            ExportedAt = manifest!.ExportedAt,
+            FormatVersion = manifest.FormatVersion,
+            RuleCount = rules!.Count,
+            RestoredEntries = restored,
+            BackupDir = backupDir,
+            CredentialsChanged = credChanged
+        }));
+    }
+
+    private static async Task WriteZipEntryAsync(ZipArchive zip, string name, byte[] content)
+    {
+        var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
+        await using var s = entry.Open();
+        await s.WriteAsync(content);
+    }
+
+    private static async Task<(Dictionary<string, byte[]> Files, bool BadZip)> ReadZipAsync(IFormFile file)
+    {
+        var map = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+            ms.Position = 0;
+            using var zip = new ZipArchive(ms, ZipArchiveMode.Read);
+            foreach (var e in zip.Entries)
+            {
+                if (e.Name.Length == 0) continue; // 跳过目录条目
+                await using var s = e.Open();
+                using var buf = new MemoryStream();
+                await s.CopyToAsync(buf);
+                map[e.FullName] = buf.ToArray();
+            }
+            return (map, false);
+        }
+        catch (InvalidDataException)
+        {
+            return (map, true);
+        }
+    }
+
+    private static async Task<(BackupManifest? Manifest, AppSettings? Settings, List<CustomRule>? Rules, string? Error)>
+        ValidateBackupAsync(Dictionary<string, byte[]> files)
+    {
+        BackupManifest? manifest;
+        if (!files.TryGetValue("manifest.json", out var mj))
+            return (null, null, null, "备份缺少 manifest.json");
+        try
+        {
+            manifest = JsonSerializer.Deserialize<BackupManifest>(mj, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return (null, null, null, "manifest.json 内容损坏");
+        }
+        if (manifest == null)
+            return (null, null, null, "manifest.json 为空");
+        if (manifest.FormatVersion != BackupFormatVersion)
+            return (null, null, null, $"不支持的备份格式版本：{manifest.FormatVersion}");
+
+        AppSettings? settings = null;
+        List<CustomRule>? rules = null;
+        if (files.TryGetValue("settings.json", out var sj))
+        {
+            try { settings = JsonSerializer.Deserialize<AppSettings>(sj, JsonOptions); }
+            catch (JsonException) { return (null, null, null, "settings.json 内容损坏"); }
+        }
+        if (files.TryGetValue("rules.json", out var rj))
+        {
+            try { rules = JsonSerializer.Deserialize<List<CustomRule>>(rj, JsonOptions); }
+            catch (JsonException) { return (null, null, null, "rules.json 内容损坏"); }
+        }
+        else
+        {
+            rules = new List<CustomRule>();
+        }
+
+        foreach (var r in rules!)
+        {
+            if (!IsRuleValid(RuleDto.From(r), out var err))
+                return (null, null, null, $"规则「{r.Target}」无效：{err}");
+        }
+        return (manifest, settings, rules, null);
+    }
+
     private static bool IsRuleValid(RuleDto dto, out string error)
     {
         error = string.Empty;
@@ -589,6 +773,32 @@ public class ImportRequest
 public class LatencyRequest
 {
     public string? Name { get; set; }
+}
+
+public class BackupManifest
+{
+    public int FormatVersion { get; set; }
+    public DateTimeOffset ExportedAt { get; set; }
+    public List<string> Entries { get; set; } = new();
+}
+
+public class BackupPreviewResponse
+{
+    public DateTimeOffset ExportedAt { get; set; }
+    public int FormatVersion { get; set; }
+    public bool ContainsSettings { get; set; }
+    public int RuleCount { get; set; }
+    public List<string> Entries { get; set; } = new();
+}
+
+public class BackupImportResponse
+{
+    public DateTimeOffset ExportedAt { get; set; }
+    public int FormatVersion { get; set; }
+    public int RuleCount { get; set; }
+    public List<string> RestoredEntries { get; set; } = new();
+    public string BackupDir { get; set; } = string.Empty;
+    public bool CredentialsChanged { get; set; }
 }
 
 public static class RuleDtoMapping

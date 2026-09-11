@@ -12,6 +12,7 @@ server/obj/
 # Runtime data (user-specific config & rules)
 server/Data/rules.json
 server/Data/settings.json
+server/Data/backup/
 
 # Logs
 *.log

@@ -1,5 +1,5 @@
 import http, { unwrap } from './http'
-import type { ApiResponse, DashboardDto, RuleDto, SettingsDto, ConfigDto, ProxyNode } from '@/types'
+import type { ApiResponse, DashboardDto, RuleDto, SettingsDto, ConfigDto, ProxyNode, BackupPreview, BackupImportResult } from '@/types'
 
 export const authApi = {
   login: (username: string, password: string) =>
@@ -46,4 +46,19 @@ export const configApi = {
   raw: () => unwrap(http.get<ApiResponse<ConfigDto>>('/api/config/raw')),
   merged: () => unwrap(http.get<ApiResponse<ConfigDto>>('/api/config/merged')),
   refresh: () => unwrap(http.post<ApiResponse<{ refreshed: boolean }>>('/api/config/refresh'))
+}
+
+export const backupApi = {
+  // 导出走原生 blob 下载，不走统一响应壳
+  exportFile: () => http.get('/api/backup/export', { responseType: 'blob' }),
+  preview: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return unwrap(http.post<ApiResponse<BackupPreview>>('/api/backup/preview', fd))
+  },
+  importFile: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return unwrap(http.post<ApiResponse<BackupImportResult>>('/api/backup/import', fd))
+  }
 }

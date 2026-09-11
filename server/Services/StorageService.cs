@@ -125,4 +125,81 @@ public class StorageService : IStorageService
             _settingsLock.Release();
         }
     }
+
+    public async Task<byte[]> GetRawSettingsFileAsync()
+    {
+        await _settingsLock.WaitAsync();
+        try
+        {
+            if (File.Exists(_settingsPath))
+            {
+                return await File.ReadAllBytesAsync(_settingsPath);
+            }
+            return JsonSerializer.SerializeToUtf8Bytes(
+                new AppSettings { AccessToken = Guid.NewGuid().ToString("N")[..16] }, JsonOptions);
+        }
+        finally
+        {
+            _settingsLock.Release();
+        }
+    }
+
+    public async Task<byte[]> GetRawRulesFileAsync()
+    {
+        await _rulesLock.WaitAsync();
+        try
+        {
+            if (File.Exists(_rulesPath))
+            {
+                return await File.ReadAllBytesAsync(_rulesPath);
+            }
+            return JsonSerializer.SerializeToUtf8Bytes(new List<CustomRule>(), JsonOptions);
+        }
+        finally
+        {
+            _rulesLock.Release();
+        }
+    }
+
+    public async Task<string> SnapshotBackupAsync()
+    {
+        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var dir = Path.Combine(_dataDir, "backup", stamp);
+        Directory.CreateDirectory(dir);
+        if (File.Exists(_settingsPath))
+        {
+            File.Copy(_settingsPath, Path.Combine(dir, "settings.json"), overwrite: true);
+        }
+        if (File.Exists(_rulesPath))
+        {
+            File.Copy(_rulesPath, Path.Combine(dir, "rules.json"), overwrite: true);
+        }
+        return Path.Combine("backup", stamp);
+    }
+
+    public async Task WriteRawSettingsFileAsync(byte[] content)
+    {
+        await _settingsLock.WaitAsync();
+        try
+        {
+            await File.WriteAllBytesAsync(_settingsPath, content);
+        }
+        finally
+        {
+            _settingsLock.Release();
+        }
+    }
+
+    public async Task WriteRawRulesFileAsync(byte[] content)
+    {
+        await _rulesLock.WaitAsync();
+        try
+        {
+            await File.WriteAllBytesAsync(_rulesPath, content);
+        }
+        finally
+        {
+            _rulesLock.Release();
+        }
+    }
 }

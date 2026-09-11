@@ -55,3 +55,20 @@ export interface ConfigDto {
   lastGoodUpdate: string | null
   isStale: boolean
 }
+
+export interface BackupPreview {
+  exportedAt: string
+  formatVersion: number
+  containsSettings: boolean
+  ruleCount: number
+  entries: string[]
+}
+
+export interface BackupImportResult {
+  exportedAt: string
+  formatVersion: number
+  ruleCount: number
+  restoredEntries: string[]
+  backupDir: string
+  credentialsChanged: boolean
+}
